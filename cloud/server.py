@@ -248,6 +248,44 @@ def api_history():
     return _need_login() or jsonify({"events": engine().history(300)})
 
 
+@app.get("/api/performance")
+def api_performance():
+    return _need_login() or jsonify({"rows": engine().performance(), "risk_usd": engine().user.get("risk_usd", 1.0)})
+
+
+@app.route("/api/price_alerts", methods=["GET", "POST"])
+def api_price_alerts():
+    if (r := _need_login()):
+        return r
+    eng = engine()
+    if request.method == "POST":
+        b = request.get_json(force=True) or {}
+        try:
+            a = eng.add_price_alert(b.get("market", ""), b.get("cond", ""), b.get("level"), b.get("note", ""))
+            return jsonify({"ok": True, "alert": a})
+        except (ValueError, TypeError) as e:
+            return jsonify({"ok": False, "msg": str(e)}), 400
+    from cloud.engine import PRICE_MARKETS
+    return jsonify({"alerts": list(reversed(eng.price_alerts())), "prices": eng.prices(),
+                    "markets": {k: v[1] for k, v in PRICE_MARKETS.items()}})
+
+
+@app.delete("/api/price_alerts/<int:aid>")
+def api_price_alert_delete(aid):
+    if (r := _need_login()):
+        return r
+    engine().delete_price_alert(aid)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/news")
+def api_news():
+    if (r := _need_login()):
+        return r
+    eng = engine()
+    return jsonify({"news": eng.news(), "on": eng.user.get("news_alerts", True), "minutes": eng.user.get("news_minutes", 30)})
+
+
 @app.route("/api/user_settings", methods=["GET", "POST"])
 def api_user_settings():
     if (r := _need_login()):

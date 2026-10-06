@@ -35,7 +35,24 @@ POLL_SECONDS = 10
 LOT_SPECS = {"XAUUSD": (100.0, 0.01), "BTCUSD": (1.0, 0.01), "USTEC (NAS100)": (1.0, 0.05), "USDJPY": (None, 0.01)}
 CENT_MARKETS = ("XAUUSD", "USDJPY")       # Exness Cent accounts trade forex + metals, not indices / crypto
 USER_DEFAULTS = {"risk_usd": 1.0, "account": "standard", "muted": [], "daily_summary": True, "summary_utc_hour": 20,
-                 "summary_sent": ""}
+                 "summary_sent": "", "news_alerts": True, "news_minutes": 30}
+# What each strategy did in its test (the "unseen" years), to compare with its live record.
+#   win %, profit factor, average R per trade, trades per month, where the numbers come from
+BACKTEST = {
+    "XAUUSD_BO4H": (41.5, 1.30, 0.15, 2.2, "final test 2022-26, 118 trades"),
+    "XAUUSD_BO4H_BIG": (24.0, 1.40, 0.25, 2.6, "final check 2022-26, 139 trades"),
+    "XAUUSD_BO4H_3R": (64.2, 1.46, 0.16, 2.3, "final check 2022-26"),
+    "XAUUSD_RC2": (65.4, 1.37, 0.08, 11.0, "final test 2022-26, 587 trades"),
+    "BTCUSD_BO1H": (37.7, 1.39, 0.21, 6.4, "final test 2025-26, 130 trades"),
+    "NAS100_NOISE": (40.2, 1.26, None, 35.0, "2004-26, 2,182 days (results in points)"),
+    "USDJPY_BO4H_BIG": (22.8, 1.36, 0.21, 2.6, "final test 2022-26, 136 trades"),
+}
+MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,355 trades"),
+                 60: (30.0, 1.42, 0.19, 4.0, "2015-26, decides every hour, 531 trades")}
+PRICE_MARKETS = {"XAUUSD": ("XAUUSDm", "Gold"), "USDJPY": ("USDJPYm", "USD/JPY"), "BTCUSD": ("BTCUSDm", "BTC"),
+                 "NAS100": ("USTECm", "Nasdaq-100 index")}
+NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+NEWS_COUNTRIES = ("USD", "JPY")
 
 
 def lot_text(key: str, entry, sl, user: dict) -> str:
@@ -150,7 +167,19 @@ class CloudEngine:
                     self.events.append(e)
                 except Exception:
                     pass
+        self._pa_lock = threading.Lock()
         threading.Thread(target=self._loop, name="tradecore-cloud", daemon=True).start()
+        threading.Thread(target=self._side_loop, name="tradecore-alerts", daemon=True).start()
+
+    def _side_loop(self):
+        """Price alerts, news warnings and the daily summary every 10 s - never held up by the strategy loop."""
+        while True:
+            for job in (self._check_price_alerts, self._check_news, self._maybe_summary):
+                try:
+                    job()
+                except Exception as e:
+                    self.log(f"{job.__name__}: {str(e)[:120]}")
+            time.sleep(POLL_SECONDS)
 
     def _ensure_server_keys(self):
         """The login-cookie key and the push keys: from the settings if given, else made once here and kept in
@@ -192,6 +221,7 @@ class CloudEngine:
         from paper_trader import PaperTrader, resolve_strategy
         from forward_markets import ForwardWorker
         factory = make_feed_factory(self.cfg, self.data_dir)
+        self.factory = factory                   # the price alerts use the same feeds
         if self.main is None:
             try:
                 self.main_feed = factory("XAUUSDm")
@@ -241,7 +271,6 @@ class CloudEngine:
                         m.tick()
                     self.last_tick_at = datetime.now().isoformat(timespec="seconds")
                     self._watch()
-                    self._maybe_summary()
                 self.persist.maybe_push()
             except Exception as e:
                 self.error = str(e)
@@ -359,6 +388,10 @@ class CloudEngine:
                 u["daily_summary"] = bool(new["daily_summary"])
             if "summary_utc_hour" in new:
                 u["summary_utc_hour"] = int(new["summary_utc_hour"]) % 24
+            if "news_alerts" in new:
+                u["news_alerts"] = bool(new["news_alerts"])
+            if "news_minutes" in new:
+                u["news_minutes"] = max(5, min(int(new["news_minutes"]), 240))
         except (TypeError, ValueError) as e:
             raise ValueError(f"bad setting: {e}")
         self.user = u
@@ -371,6 +404,171 @@ class CloudEngine:
     def history(self, limit: int = 300) -> list:
         with self._events_lock:
             return list(reversed(self.events[-limit:]))
+
+    # ------------------------------------------------------------------ live results vs the test
+    def performance(self) -> list:
+        """Each strategy's live paper record next to its test numbers, with a plain verdict."""
+        risk = float(self.user.get("risk_usd", 1.0))
+        rows = []
+        for key in ["MAIN"] + [k for k in self.keys]:
+            bt = MAIN_BACKTEST.get(self.decision_minutes, MAIN_BACKTEST[5]) if key == "MAIN" else BACKTEST.get(key)
+            if bt is None:
+                continue
+            path = self.journal_path if key == "MAIN" else os.path.join(self.data_dir, f"forward_{key}.csv")
+            row = {"key": key, "name": NAMES.get(key, key), "bt_win": bt[0], "bt_pf": bt[1], "bt_r": bt[2],
+                   "bt_per_month": bt[3], "bt_note": bt[4], "n": 0, "unit": "points" if key == "NAS100_NOISE" else "R"}
+            try:
+                df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
+            except Exception:
+                df = pd.DataFrame()
+            if len(df):
+                if key == "NAS100_NOISE":
+                    r = pd.to_numeric(df["points_net"], errors="coerce").dropna()
+                    first = df["entry_time"].iloc[0] if "entry_time" in df else None
+                else:
+                    df = df[df.get("status") == "closed"] if "status" in df else df.iloc[0:0]
+                    rn = pd.to_numeric(df.get("r_net"), errors="coerce") if "r_net" in df else None
+                    rm = pd.to_numeric(df.get("r_multiple"), errors="coerce") if "r_multiple" in df else None
+                    r = (rn.fillna(rm) if rn is not None and rm is not None else (rn if rn is not None else rm))
+                    r = r.dropna() if r is not None else pd.Series(dtype=float)
+                    first = df["time_opened"].iloc[0] if len(df) and "time_opened" in df else None
+                if len(r):
+                    w, l = r[r > 0].sum(), -r[r < 0].sum()
+                    row.update(n=int(len(r)), win=round(100 * float((r > 0).mean()), 1), total=round(float(r.sum()), 2),
+                               avg=round(float(r.mean()), 3), pf=round(float(w / l), 2) if l > 0 else None,
+                               since=str(first)[:10] if first is not None else "")
+                    if key != "NAS100_NOISE":
+                        row["usd"] = round(float(r.sum()) * risk, 2)
+            n = row["n"]
+            if n < 20:
+                row["verdict"] = f"too early - {n} closed trade(s); about 30 are needed to judge"
+            elif key == "NAS100_NOISE":
+                row["verdict"] = ("on track" if (row.get("pf") or 0) >= 1.1 else
+                                  "weaker than the test" if row.get("total", 0) > 0 else "losing - watch it")
+            else:
+                row["verdict"] = ("on track" if row["avg"] >= 0.5 * bt[2] else
+                                  "weaker than the test" if row["avg"] > 0 else "losing - watch it")
+            rows.append(row)
+        return rows
+
+    # ------------------------------------------------------------------ your price alerts
+    def _price_alerts_path(self):
+        return os.path.join(self.data_dir, "price_alerts.json")
+
+    def price_alerts(self) -> list:
+        p = self._price_alerts_path()
+        try:
+            return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else []
+        except Exception:
+            return []
+
+    def _save_price_alerts(self, alerts: list):
+        with open(self._price_alerts_path(), "w", encoding="utf-8") as f:
+            json.dump(alerts, f)
+
+    def add_price_alert(self, market: str, cond: str, level, note: str = "") -> dict:
+        if market not in PRICE_MARKETS or cond not in ("above", "below"):
+            raise ValueError("choose a market and above / below")
+        level = float(level)
+        if level <= 0:
+            raise ValueError("the price must be above 0")
+        with self._pa_lock:
+            return self._add_price_alert(market, cond, level, note)
+
+    def _add_price_alert(self, market, cond, level, note):
+        alerts = self.price_alerts()
+        a = {"id": max([x["id"] for x in alerts] + [0]) + 1, "market": market, "cond": cond, "level": level,
+             "note": str(note)[:80], "created": datetime.utcnow().isoformat(timespec="seconds") + "Z", "triggered": ""}
+        alerts.append(a)
+        self._save_price_alerts(alerts)
+        self.log(f"price alert added: {PRICE_MARKETS[market][1]} {cond} {level}")
+        return a
+
+    def delete_price_alert(self, aid: int):
+        with self._pa_lock:
+            self._save_price_alerts([a for a in self.price_alerts() if a["id"] != int(aid)])
+
+    def prices(self) -> dict:
+        out = {}
+        f = getattr(self, "factory", None)
+        for m, (sym, _) in PRICE_MARKETS.items():
+            try:
+                out[m] = float(f(sym).current_price()) if f else None
+            except Exception:
+                out[m] = None
+        return out
+
+    def _check_price_alerts(self):
+        if not any(not a.get("triggered") for a in self.price_alerts()):
+            return
+        prices = self.prices()
+        with self._pa_lock:
+            self._fire_price_alerts(prices)
+
+    def _fire_price_alerts(self, prices: dict):
+        alerts = self.price_alerts()
+        active = [a for a in alerts if not a.get("triggered")]
+        changed = False
+        for a in active:
+            p = prices.get(a["market"])
+            if p is None:
+                continue
+            if (a["cond"] == "above" and p >= a["level"]) or (a["cond"] == "below" and p <= a["level"]):
+                a["triggered"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                changed = True
+                name = PRICE_MARKETS[a["market"]][1]
+                self._alert(f"PRICE ALERT {name} {a['cond']} {a['level']:g}",
+                            f"{name} is now {p:,.3f} - it reached your level {a['level']:g}." + (f" {a['note']}" if a["note"] else ""),
+                            "price")
+        if changed:
+            self._save_price_alerts(alerts)
+
+    # ------------------------------------------------------------------ news warnings
+    def news(self) -> list:
+        """High-impact USD / JPY news of this week (Forex Factory's public calendar), refreshed every hour."""
+        now = time.time()
+        if getattr(self, "_news_at", 0) and now - self._news_at < 3600:
+            return self._news
+        try:
+            import requests
+            raw = requests.get(NEWS_URL, timeout=20, headers={"User-Agent": "Mozilla/5.0"}).json()
+            items = []
+            for e in raw:
+                if e.get("impact") != "High" or e.get("country") not in NEWS_COUNTRIES:
+                    continue
+                t = pd.Timestamp(e["date"]).tz_convert("UTC")
+                items.append({"title": e.get("title", ""), "country": e["country"], "utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                              "forecast": e.get("forecast", ""), "previous": e.get("previous", "")})
+            self._news = sorted(items, key=lambda x: x["utc"])
+            self._news_at = now
+        except Exception as ex:
+            self.log(f"news calendar unavailable: {str(ex)[:80]}")
+            self._news_at = now - 3000                # try again in about 10 minutes
+            self._news = getattr(self, "_news", [])
+        return self._news
+
+    def _check_news(self):
+        if not self.user.get("news_alerts", True):
+            return
+        lead = int(self.user.get("news_minutes", 30))
+        warned_path = os.path.join(self.data_dir, "news_warned.json")
+        try:
+            warned = set(json.load(open(warned_path, encoding="utf-8"))) if os.path.exists(warned_path) else set()
+        except Exception:
+            warned = set()
+        now = pd.Timestamp.now(tz="UTC")
+        for e in self.news():
+            t = pd.Timestamp(e["utc"])
+            mins = (t - now).total_seconds() / 60
+            k = e["utc"] + e["title"]
+            if 0 < mins <= lead and k not in warned:
+                warned.add(k)
+                extra = (f" Forecast {e['forecast']}, previous {e['previous']}." if e["forecast"] or e["previous"] else "")
+                self._alert(f"NEWS IN {int(round(mins))} MIN: {e['country']} {e['title']}",
+                            f"High-impact news at {t:%H:%M} UTC.{extra} Spreads widen and prices can jump - better not to "
+                            f"open a new trade just before it; open trades keep their SL.", "news")
+                with open(warned_path, "w", encoding="utf-8") as f:
+                    json.dump(sorted(warned)[-200:], f)
 
     def _maybe_summary(self):
         u = self.user

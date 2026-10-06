@@ -330,9 +330,20 @@ class TwelveDataFeed(_CandleFeed):
     def _refresh(self, need: int = 0, force: bool = False):
         # spend credits only when a new candle has closed (or history is missing)
         with self.lock:
-            if not force and len(self.m5) >= need and time.time() < self._next_fetch:
-                return
-            super()._refresh(need=need, force=True)
+            if not force and time.time() < self._next_fetch:
+                if len(self.m5) >= need:
+                    return
+                if getattr(self, "_last_error", None):       # failing: answer at once, do not wait 8 s again
+                    raise RuntimeError(self._last_error)
+            try:
+                super()._refresh(need=need, force=True)
+                self._last_error = None
+            except Exception as e:
+                self._last_error = str(e)[:200]
+                self._next_fetch = time.time() + 60          # pause this feed a minute instead of slowing everything
+                if len(self.m5) >= max(need, 1):
+                    return                                   # keep using the candles we already have
+                raise
             now = pd.Timestamp.now(tz="UTC").tz_localize(None)
             expected = now.floor("5min") - pd.Timedelta(minutes=5)            # the newest candle that has closed
             last = self.m5.index[-1] if len(self.m5) else None

@@ -7,7 +7,7 @@ import os
 import time
 
 PATTERNS = ["paper_journal.csv", "forward_*.csv", "push_subs.json", "events.jsonl", "server_keys.json",
-            "user_settings.json"]
+            "user_settings.json", "price_alerts.json", "news_warned.json"]
 
 
 class Persist:
