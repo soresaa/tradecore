@@ -215,6 +215,7 @@ def api_events():
     if (r := _need_login()):
         return r
     eng = engine()
+    eng.native_seen = time.time()                    # the Android app is listening -> it gets the alerts, not Chrome
     if request.args.get("init") == "1":
         return jsonify({"events": [], "last": eng.last_event_id()})
     try:
@@ -228,6 +229,7 @@ def api_events():
         if evs or time.time() >= deadline:
             break
         time.sleep(1)
+    eng.native_seen = time.time()
     return jsonify({"events": evs, "last": eng.last_event_id()})
 
 

@@ -103,6 +103,7 @@ class CloudEngine:
         self.events_path = os.path.join(self.data_dir, "events.jsonl")
         self.events = []                         # every alert, numbered: the Android app asks for the new ones
         self._events_lock = threading.Lock()
+        self.native_seen = 0.0                   # last time the Android app was listening (then: no Chrome alerts)
         if os.path.exists(self.events_path):
             for line in open(self.events_path, encoding="utf-8"):
                 try:
@@ -291,9 +292,15 @@ class CloudEngine:
                 pass
             e["id"] = len(self.events)
             self.events.append(e)
+        if self.native_app_listening():
+            self.log("  delivered to the TRADECORE Android app (Chrome alerts not needed)")
+            return 0
         n = self.push.send(title, body, tag=key)
-        self.log(f"  sent to {n} browser device(s); the Android app picks it up by itself")
+        self.log(f"  sent to {n} browser device(s) (the Android app is not listening right now)")
         return n
+
+    def native_app_listening(self) -> bool:
+        return time.time() - self.native_seen < 180
 
     def events_after(self, after: int) -> list:
         with self._events_lock:
@@ -333,5 +340,7 @@ class CloudEngine:
         }
 
     def test_alert(self) -> dict:
+        app = self.native_app_listening()
         n = self._alert("TRADECORE test", "Your phone alerts work. Signals will come like this.", "test")
-        return {"ok": True, "msg": f"test alert sent (browser devices: {n}; the Android app shows it within seconds)"}
+        return {"ok": True, "msg": "test alert sent to the TRADECORE app - it shows within seconds" if app else
+                f"test alert sent to {n} browser device(s)"}
