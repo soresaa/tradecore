@@ -95,7 +95,9 @@ background:#141b33;border-bottom:1px solid #2a355e;font:13px system-ui,sans-seri
 
 ALERTS_BAR = """
 <div id="tcCloud"><button id="tcAlerts">Turn on alerts</button><span id="tcStatus" class="muted">checking...</span>
-<a href="/logout">log out</a></div>
+<a href="/tools" style="margin-left:auto;color:#35d07f;font-weight:700">History &amp; settings</a>
+<a id="tcExness" href="tradecore://open?pkg=com.exness.android.pa" style="display:none;color:#5ab2ff;font-weight:700;margin-left:10px">Exness</a>
+<a href="/logout" style="margin-left:10px">log out</a></div>
 <script>
 (function () {
   const st = document.getElementById('tcStatus'), btn = document.getElementById('tcAlerts');
@@ -105,6 +107,7 @@ ALERTS_BAR = """
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   async function refresh() {
     if (navigator.userAgent.includes('TradecoreApp')) {      // inside the Android app: it shows the alerts itself
+      document.getElementById('tcExness').style.display = 'inline';
       st.textContent = 'alerts: handled by the TRADECORE app'; btn.textContent = 'Send test alert'; btn.dataset.on = '1'; return;
     }
     if (!('serviceWorker' in navigator)) { st.textContent = 'this browser cannot get alerts'; btn.style.display = 'none'; return; }
@@ -231,6 +234,33 @@ def api_events():
         time.sleep(1)
     eng.native_seen = time.time()
     return jsonify({"events": evs, "last": eng.last_event_id()})
+
+
+@app.get("/tools")
+def tools():
+    if not logged_in():
+        return redirect("/login")
+    return send_from_directory(STATIC, "tools.html", mimetype="text/html")
+
+
+@app.get("/api/history")
+def api_history():
+    return _need_login() or jsonify({"events": engine().history(300)})
+
+
+@app.route("/api/user_settings", methods=["GET", "POST"])
+def api_user_settings():
+    if (r := _need_login()):
+        return r
+    from cloud.engine import NAMES
+    eng = engine()
+    if request.method == "POST":
+        try:
+            s = eng.save_user(request.get_json(force=True) or {})
+            return jsonify({"ok": True, "settings": s})
+        except ValueError as e:
+            return jsonify({"ok": False, "msg": str(e)}), 400
+    return jsonify({"settings": eng.user, "names": NAMES})
 
 
 @app.post("/api/start")

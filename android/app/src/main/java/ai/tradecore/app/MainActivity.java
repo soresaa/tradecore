@@ -39,6 +39,10 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri u = request.getUrl();
+                if ("tradecore".equals(u.getScheme())) {         // tradecore://open?pkg=... -> open that app
+                    openApp(MainActivity.this, u.getQueryParameter("pkg"));
+                    return true;
+                }
                 String host = u.getHost();
                 if (host != null && Uri.parse(BASE).getHost().equals(host)) {
                     return false;                        // your app's own pages stay inside the app
@@ -67,6 +71,22 @@ public class MainActivity extends Activity {
         }
         askToIgnoreBatterySaver();
         AlertService.start(this);
+    }
+
+    /** Opens an installed app (Exness, MT5, TradingView); if it is missing, its Play Store page. */
+    static void openApp(android.content.Context c, String pkg) {
+        if (pkg == null || pkg.isEmpty()) {
+            return;
+        }
+        Intent i = c.getPackageManager().getLaunchIntentForPackage(pkg);
+        if (i == null) {
+            i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + pkg));
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            c.startActivity(i);
+        } catch (Exception ignored) {
+        }
     }
 
     /** Once: ask Android not to put the alert service to sleep (otherwise phones like Xiaomi stop it). */

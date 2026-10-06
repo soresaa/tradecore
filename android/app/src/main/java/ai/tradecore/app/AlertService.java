@@ -29,6 +29,7 @@ import java.net.URL;
 public class AlertService extends Service {
     static final String CH_SIGNALS = "signals";
     static final String CH_RUNNING = "running";
+    static final String EXNESS = "com.exness.android.pa";
     private volatile boolean running = false;
 
     public static void start(Context c) {
@@ -117,6 +118,13 @@ public class AlertService extends Service {
                 .setContentIntent(openApp());
         if (Build.VERSION.SDK_INT < 26) {
             b.setPriority(Notification.PRIORITY_HIGH).setDefaults(Notification.DEFAULT_ALL);
+        }
+        Intent exness = getPackageManager().getLaunchIntentForPackage(EXNESS);
+        if (exness != null && !title.contains("summary") && !title.contains("log in")) {   // a trade alert: one tap to Exness
+            exness.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            PendingIntent pi = PendingIntent.getActivity(this, 7, exness, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            b.addAction(new Notification.Action.Builder(
+                    android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_notify), "Open Exness", pi).build());
         }
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         nm.notify(id, b.build());

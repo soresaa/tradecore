@@ -31,6 +31,37 @@ NAMES = {"MAIN": "Gold 1-hour trend", "XAUUSD_BO4H": "Gold 4-hour breakout", "XA
 SYMBOL = {"MAIN": "XAUUSD", "XAUUSD_BO4H": "XAUUSD", "XAUUSD_BO4H_BIG": "XAUUSD", "XAUUSD_BO4H_3R": "XAUUSD",
           "XAUUSD_RC2": "XAUUSD", "BTCUSD_BO1H": "BTCUSD", "NAS100_NOISE": "USTEC (NAS100)", "USDJPY_BO4H_BIG": "USDJPY"}
 POLL_SECONDS = 10
+# Exness Standard contract specs: (USD per 1.0 price move per 1 lot, smallest lot). USD/JPY's depends on the price.
+LOT_SPECS = {"XAUUSD": (100.0, 0.01), "BTCUSD": (1.0, 0.01), "USTEC (NAS100)": (1.0, 0.05), "USDJPY": (None, 0.01)}
+CENT_MARKETS = ("XAUUSD", "USDJPY")       # Exness Cent accounts trade forex + metals, not indices / crypto
+USER_DEFAULTS = {"risk_usd": 1.0, "account": "standard", "muted": [], "daily_summary": True, "summary_utc_hour": 20,
+                 "summary_sent": ""}
+
+
+def lot_text(key: str, entry, sl, user: dict) -> str:
+    """'Lot 0.02 = risk $0.96' for the user's risk per trade and account type (cent lot = 0.01 standard lot)."""
+    import math
+    try:
+        entry, dist = float(entry), abs(float(entry) - float(sl))
+    except (TypeError, ValueError):
+        return ""
+    sym = SYMBOL.get(key, "")
+    if dist <= 0 or sym not in LOT_SPECS:
+        return ""
+    per, min_lot = LOT_SPECS[sym]
+    per = per if per is not None else 100000.0 / entry
+    risk = float(user.get("risk_usd", 1.0))
+    lots = risk / (dist * per)                          # standard lots
+    if user.get("account") == "cent" and sym in CENT_MARKETS:
+        c = math.floor(lots * 100 / 0.01 + 1e-9) * 0.01  # cent lots
+        if c < 0.01:
+            return f" | Lot: smallest 0.01 (cent) risks ${0.0001 * dist * per:.2f} - more than your ${risk:.2f}"
+        return f" | Lot {c:.2f} on your Cent account = risk ${c / 100 * dist * per:.2f}"
+    l = math.floor(lots / 0.01 + 1e-9) * 0.01
+    note = " (Standard account)" if user.get("account") == "cent" else ""
+    if l < min_lot:
+        return f" | Lot: smallest {min_lot:.2f}{note} risks ${min_lot * dist * per:.2f} - more than your ${risk:.2f}"
+    return f" | Lot {l:.2f}{note} = risk ${l * dist * per:.2f}"
 
 
 def make_feed_factory(cfg: dict, data_dir: str):
@@ -104,6 +135,13 @@ class CloudEngine:
         self.events = []                         # every alert, numbered: the Android app asks for the new ones
         self._events_lock = threading.Lock()
         self.native_seen = 0.0                   # last time the Android app was listening (then: no Chrome alerts)
+        self.user_path = os.path.join(self.data_dir, "user_settings.json")
+        self.user = dict(USER_DEFAULTS)
+        if os.path.exists(self.user_path):
+            try:
+                self.user.update(json.load(open(self.user_path, encoding="utf-8")))
+            except Exception:
+                pass
         if os.path.exists(self.events_path):
             for line in open(self.events_path, encoding="utf-8"):
                 try:
@@ -203,6 +241,7 @@ class CloudEngine:
                         m.tick()
                     self.last_tick_at = datetime.now().isoformat(timespec="seconds")
                     self._watch()
+                    self._maybe_summary()
                 self.persist.maybe_push()
             except Exception as e:
                 self.error = str(e)
@@ -276,12 +315,16 @@ class CloudEngine:
                     half = "close HALF + " if key == "XAUUSD_BO4H_3R" else ""
                     body = (f"Entry {f(op.get('entry'))} | SL {f(op.get('sl'))} ({dist(op.get('sl'))} away) | "
                             f"TP1 {f(op.get('tp1'))} ({half}SL to entry) | TP2 {f(op.get('tp2'))} ({dist(op.get('tp2'))} away)")
+                body += lot_text(key, op.get("entry"), op.get("sl"), self.user)
                 self._alert(f"{d} {sym} - {name}", body, key)
             if tp1 and not prev[1] and open_id == prev[0]:
                 what = "close HALF and move your SL to entry" if key == "XAUUSD_BO4H_3R" else "move your SL to entry"
                 self._alert(f"TP1 HIT {sym} - {name}", what, key)
 
     def _alert(self, title: str, body: str, key: str) -> int:
+        if key in (self.user.get("muted") or []):
+            self.log(f"(muted by you) {title}: {body}")
+            return 0
         self.log(f"ALERT {title}: {body}")
         e = {"at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "key": key, "title": title, "body": body}
         with self._events_lock:
@@ -301,6 +344,56 @@ class CloudEngine:
 
     def native_app_listening(self) -> bool:
         return time.time() - self.native_seen < 180
+
+    # ------------------------------------------------------------------ your settings, history, daily summary
+    def save_user(self, new: dict) -> dict:
+        u = dict(self.user)
+        try:
+            if "risk_usd" in new:
+                u["risk_usd"] = max(0.01, min(float(new["risk_usd"]), 100000.0))
+            if new.get("account") in ("standard", "cent"):
+                u["account"] = new["account"]
+            if isinstance(new.get("muted"), list):
+                u["muted"] = [k for k in new["muted"] if k in NAMES]
+            if "daily_summary" in new:
+                u["daily_summary"] = bool(new["daily_summary"])
+            if "summary_utc_hour" in new:
+                u["summary_utc_hour"] = int(new["summary_utc_hour"]) % 24
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"bad setting: {e}")
+        self.user = u
+        with open(self.user_path, "w", encoding="utf-8") as f:
+            json.dump(u, f)
+        self.log(f"your settings saved: risk ${u['risk_usd']:.2f}, {u['account']} account, "
+                 f"{len(u['muted'])} strategy(ies) muted, daily summary {'on' if u['daily_summary'] else 'off'}")
+        return u
+
+    def history(self, limit: int = 300) -> list:
+        with self._events_lock:
+            return list(reversed(self.events[-limit:]))
+
+    def _maybe_summary(self):
+        u = self.user
+        now = datetime.utcnow()
+        today = now.date().isoformat()
+        if not u.get("daily_summary", True) or now.hour != int(u.get("summary_utc_hour", 20)) or u.get("summary_sent") == today:
+            return
+        import re
+        evs = [e for e in self.history(500) if e.get("at", "").startswith(today) and e.get("key") not in ("test", "summary")]
+        new = [e for e in evs if e["title"].startswith(("BUY", "SELL"))]
+        closed = [e for e in evs if e["title"].startswith("CLOSED")]
+        r_sum = sum(float(m.group(1)) for e in closed for m in [re.search(r"([+-][\d.]+)R", e["body"])] if m)
+        pts = sum(float(m.group(1)) for e in closed for m in [re.search(r"([+-][\d.]+) points", e["body"])] if m)
+        risk = float(u.get("risk_usd", 1.0))
+        open_now = [NAMES.get(k, k) for k, v in self._seen.items() if v and v[0]]
+        money = r_sum * risk
+        body = (f"Today: {len(new)} new signal(s), {len(closed)} closed: {r_sum:+.2f}R (about "
+                f"{'+' if money >= 0 else '-'}${abs(money):.2f} at "
+                f"${risk:.2f} a trade)" + (f", NAS100 {pts:+.1f} points" if pts else "") + ". "
+                + (f"Open now: {', '.join(open_now)}." if open_now else "No open trades."))
+        u["summary_sent"] = today
+        self.save_user({})
+        self._alert("TRADECORE daily summary", body, "summary")
 
     def events_after(self, after: int) -> list:
         with self._events_lock:

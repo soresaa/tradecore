@@ -6,7 +6,8 @@ import glob
 import os
 import time
 
-PATTERNS = ["paper_journal.csv", "forward_*.csv", "push_subs.json", "events.jsonl", "server_keys.json"]
+PATTERNS = ["paper_journal.csv", "forward_*.csv", "push_subs.json", "events.jsonl", "server_keys.json",
+            "user_settings.json"]
 
 
 class Persist:

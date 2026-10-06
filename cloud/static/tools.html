@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TRADECORE - history and settings</title>
+<meta name="theme-color" content="#0b1020"><link rel="manifest" href="/manifest.webmanifest">
+<style>
+  :root{--bg:#0b1020;--card:#141b33;--edge:#2a355e;--txt:#e8ecf5;--dim:#9aa6c4;--green:#35d07f;--red:#ff6b78;--blue:#5ab2ff}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:15px system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;padding:10px 14px;background:#0e1530;border-bottom:1px solid var(--edge)}
+  header a{color:var(--dim);text-decoration:none;font-size:14px} header b{flex:1;font-size:17px}
+  nav{display:flex;gap:6px;padding:10px 14px 0} nav button{flex:1;padding:10px 6px;border-radius:10px;border:1px solid var(--edge);background:var(--card);color:var(--dim);font-weight:700}
+  nav button.on{background:#1d2a55;color:var(--txt);border-color:#3b4c8a}
+  main{padding:12px 14px 40px;max-width:760px;margin:0 auto} .card{background:var(--card);border:1px solid var(--edge);border-radius:14px;padding:14px;margin-bottom:12px}
+  h2{font-size:15px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
+  label{display:block;margin:10px 0 4px;color:var(--dim);font-size:13px}
+  input,select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--edge);background:#0b1020;color:var(--txt);font-size:16px}
+  .row{display:flex;gap:10px} .row>*{flex:1}
+  .btn{display:block;width:100%;padding:13px;border:0;border-radius:10px;background:var(--green);color:#04210f;font-weight:800;font-size:16px;margin-top:12px}
+  .btn.alt{background:#2b3a73;color:var(--txt)}
+  .sw{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #1f2a50}
+  .sw:last-child{border:0} .sw input{width:22px;height:22px}
+  .ev{padding:10px 0;border-bottom:1px solid #1f2a50} .ev:last-child{border:0}
+  .ev .t{font-weight:700} .ev .b{color:#cfd7ea;font-size:13.5px;margin-top:3px;line-height:1.35} .ev .w{color:var(--dim);font-size:12px;margin-top:3px}
+  .buy{color:var(--green)} .sell{color:var(--red)} .muted{color:var(--dim)} .big{font-size:26px;font-weight:800;margin-top:6px}
+  .hidden{display:none} .ok{color:var(--green);margin-top:8px;font-size:14px} .err{color:var(--red);margin-top:8px;font-size:14px}
+</style></head>
+<body>
+<header><a href="/">&larr; Dashboard</a><b>TRADECORE</b><a id="exness" class="hidden" href="tradecore://open?pkg=com.exness.android.pa">Open Exness</a></header>
+<nav><button data-tab="hist" class="on">History</button><button data-tab="lot">Lot size</button><button data-tab="set">Settings</button></nav>
+<main>
+  <section id="hist">
+    <div class="card"><h2>Every alert</h2>
+      <select id="filter"><option value="">All strategies</option></select>
+      <div id="events" style="margin-top:8px"><div class="muted">Loading...</div></div>
+    </div>
+  </section>
+
+  <section id="lot" class="hidden">
+    <div class="card"><h2>Lot size calculator</h2>
+      <label>Market</label>
+      <select id="lm"><option value="XAUUSD">Gold (XAUUSD)</option><option value="USDJPY">USD/JPY</option>
+        <option value="BTCUSD">BTC (BTCUSD)</option><option value="USTEC">NAS100 (USTEC)</option></select>
+      <div class="row"><div><label>Entry price</label><input id="le" type="number" step="any" inputmode="decimal" placeholder="e.g. 4160.50"></div>
+        <div><label>Stop loss price</label><input id="ls" type="number" step="any" inputmode="decimal" placeholder="e.g. 4140.00"></div></div>
+      <div class="row"><div><label>My risk per trade ($)</label><input id="lr" type="number" step="any" inputmode="decimal"></div>
+        <div><label>Account</label><select id="la"><option value="standard">Standard</option><option value="cent">Cent</option></select></div></div>
+      <div class="big" id="lout">-</div><div class="muted" id="lnote"></div>
+    </div>
+  </section>
+
+  <section id="set" class="hidden">
+    <div class="card"><h2>My trade size</h2>
+      <div class="row"><div><label>Risk per trade ($)</label><input id="risk" type="number" step="any" inputmode="decimal"></div>
+        <div><label>Exness account</label><select id="acct"><option value="standard">Standard</option><option value="cent">Cent</option></select></div></div>
+      <div class="muted" style="margin-top:8px;font-size:13px">Every alert then tells you the lot to use for this risk.</div>
+    </div>
+    <div class="card"><h2>Which strategies alert me</h2><div id="strats"></div></div>
+    <div class="card"><h2>Daily summary</h2>
+      <div class="sw"><span>Send me a summary every day</span><input id="sumOn" type="checkbox"></div>
+      <label>At (your time)</label><select id="sumHour"></select>
+    </div>
+    <button class="btn" id="save">Save</button><div id="saved"></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const inApp = navigator.userAgent.includes('TradecoreApp');
+if (inApp) $('exness').classList.remove('hidden');
+const j = (u, o) => fetch(u, Object.assign({credentials: 'same-origin'}, o || {})).then(r => {
+  if (r.status === 401) { location.href = '/login'; throw new Error('login'); } return r.json(); });
+let S = null, NAMES = {};
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  ['hist', 'lot', 'set'].forEach(t => $(t).classList.toggle('hidden', t !== b.dataset.tab));
+  localStorage.setItem('tc_tab', b.dataset.tab);
+});
+try { const t = localStorage.getItem('tc_tab'); if (t) document.querySelector(`nav button[data-tab="${t}"]`).click(); } catch (e) {}
+
+function when(iso) { const d = new Date(iso); return d.toLocaleString([], {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}); }
+async function loadHistory() {
+  const h = await j('/api/history');
+  const f = $('filter').value;
+  const rows = h.events.filter(e => !f || e.key === f);
+  $('events').innerHTML = rows.length ? rows.map(e => {
+    const c = /^BUY/.test(e.title) ? 'buy' : /^SELL/.test(e.title) ? 'sell' : '';
+    return `<div class="ev"><div class="t ${c}">${e.title}</div><div class="b">${e.body}</div><div class="w">${when(e.at)}</div></div>`;
+  }).join('') : '<div class="muted">No alerts yet.</div>';
+}
+async function loadSettings() {
+  const r = await j('/api/user_settings'); S = r.settings; NAMES = r.names;
+  $('risk').value = S.risk_usd; $('acct').value = S.account; $('lr').value = S.risk_usd; $('la').value = S.account;
+  $('strats').innerHTML = Object.entries(NAMES).map(([k, n]) =>
+    `<div class="sw"><span>${n}</span><input type="checkbox" data-k="${k}" ${S.muted.includes(k) ? '' : 'checked'}></div>`).join('');
+  $('filter').innerHTML = '<option value="">All strategies</option>' + Object.entries(NAMES).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+  $('sumOn').checked = S.daily_summary;
+  const off = -new Date().getTimezoneOffset() / 60;
+  $('sumHour').innerHTML = [...Array(24).keys()].map(h => {
+    const local = (h + off + 24) % 24;
+    return `<option value="${h}">${String(Math.floor(local)).padStart(2, '0')}:00</option>`;
+  }).join('');
+  $('sumHour').value = S.summary_utc_hour;
+  calc();
+}
+$('save').onclick = async () => {
+  const muted = [...document.querySelectorAll('#strats input')].filter(x => !x.checked).map(x => x.dataset.k);
+  try {
+    const r = await j('/api/user_settings', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+      risk_usd: parseFloat($('risk').value), account: $('acct').value, muted, daily_summary: $('sumOn').checked,
+      summary_utc_hour: parseInt($('sumHour').value)})});
+    $('saved').className = r.ok ? 'ok' : 'err'; $('saved').textContent = r.ok ? 'Saved. Your next alerts use these settings.' : r.msg;
+    if (r.ok) { S = r.settings; $('lr').value = S.risk_usd; $('la').value = S.account; calc(); }
+  } catch (e) { $('saved').className = 'err'; $('saved').textContent = String(e); }
+};
+// Exness Standard contract sizes: USD per 1.0 price move per lot, smallest lot (cent lot = 0.01 standard lot)
+const SPEC = {XAUUSD: [100, 0.01, true], USDJPY: [null, 0.01, true], BTCUSD: [1, 0.01, false], USTEC: [1, 0.05, false]};
+function calc() {
+  const m = $('lm').value, e = parseFloat($('le').value), s = parseFloat($('ls').value), risk = parseFloat($('lr').value), acct = $('la').value;
+  const [p0, minLot, centOk] = SPEC[m];
+  if (!(e > 0) || !(s > 0) || e === s || !(risk > 0)) { $('lout').textContent = '-'; $('lnote').textContent = 'Type the entry and the stop loss.'; return; }
+  const dist = Math.abs(e - s), per = p0 === null ? 100000 / e : p0, lots = risk / (dist * per);
+  if (acct === 'cent' && centOk) {
+    const c = Math.floor(lots * 100 / 0.01 + 1e-9) * 0.01;
+    if (c < 0.01) { $('lout').textContent = 'too small'; $('lnote').textContent = `Smallest 0.01 cent lot risks $${(0.0001 * dist * per).toFixed(2)}.`; return; }
+    $('lout').textContent = c.toFixed(2) + ' cent lot'; $('lnote').textContent = `Risk $${(c / 100 * dist * per).toFixed(2)} if the stop is hit. Stop is ${dist.toFixed(m === 'USDJPY' ? 3 : 2)} away.`; return;
+  }
+  const l = Math.floor(lots / 0.01 + 1e-9) * 0.01;
+  const note = acct === 'cent' ? ' (needs a Standard account - Cent has no ' + m + ')' : '';
+  if (l < minLot) { $('lout').textContent = 'too small'; $('lnote').textContent = `Smallest ${minLot} lot risks $${(minLot * dist * per).toFixed(2)}${note}.`; return; }
+  $('lout').textContent = l.toFixed(2) + ' lot'; $('lnote').textContent = `Risk $${(l * dist * per).toFixed(2)} if the stop is hit${note}. Stop is ${dist.toFixed(m === 'USDJPY' ? 3 : 2)} away.`;
+}
+['lm', 'le', 'ls', 'lr', 'la'].forEach(id => $(id).addEventListener('input', calc));
+$('filter').onchange = loadHistory;
+loadSettings().then(loadHistory).catch(e => $('events').textContent = String(e));
+setInterval(loadHistory, 30000);
+</script>
+</body></html>

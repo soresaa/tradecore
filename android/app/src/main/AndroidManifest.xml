@@ -10,6 +10,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- so the "Open Exness" buttons can find your trading apps -->
+    <queries>
+        <package android:name="com.exness.android.pa" />
+        <package android:name="net.metaquotes.metatrader5" />
+        <package android:name="com.tradingview.tradingviewapp" />
+    </queries>
+
     <application
         android:label="TRADECORE"
         android:icon="@mipmap/ic_launcher"
