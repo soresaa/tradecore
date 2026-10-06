@@ -101,6 +101,16 @@ class CloudEngine:
         self._seen = {}
         self.journal_path = os.path.join(self.data_dir, "paper_journal.csv")
         self.events_path = os.path.join(self.data_dir, "events.jsonl")
+        self.events = []                         # every alert, numbered: the Android app asks for the new ones
+        self._events_lock = threading.Lock()
+        if os.path.exists(self.events_path):
+            for line in open(self.events_path, encoding="utf-8"):
+                try:
+                    e = json.loads(line)
+                    e["id"] = len(self.events)
+                    self.events.append(e)
+                except Exception:
+                    pass
         threading.Thread(target=self._loop, name="tradecore-cloud", daemon=True).start()
 
     def _ensure_server_keys(self):
@@ -270,16 +280,27 @@ class CloudEngine:
                 what = "close HALF and move your SL to entry" if key == "XAUUSD_BO4H_3R" else "move your SL to entry"
                 self._alert(f"TP1 HIT {sym} - {name}", what, key)
 
-    def _alert(self, title: str, body: str, key: str):
+    def _alert(self, title: str, body: str, key: str) -> int:
         self.log(f"ALERT {title}: {body}")
-        try:
-            with open(self.events_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "key": key,
-                                    "title": title, "body": body}) + "\n")
-        except Exception:
-            pass
+        e = {"at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "key": key, "title": title, "body": body}
+        with self._events_lock:
+            try:
+                with open(self.events_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(e) + "\n")
+            except Exception:
+                pass
+            e["id"] = len(self.events)
+            self.events.append(e)
         n = self.push.send(title, body, tag=key)
-        self.log(f"  sent to {n} device(s)")
+        self.log(f"  sent to {n} browser device(s); the Android app picks it up by itself")
+        return n
+
+    def events_after(self, after: int) -> list:
+        with self._events_lock:
+            return [e for e in self.events[max(after + 1, 0):]]
+
+    def last_event_id(self) -> int:
+        return len(self.events) - 1
 
     # ------------------------------------------------------------------ page
     def get_state(self) -> dict:
@@ -312,6 +333,5 @@ class CloudEngine:
         }
 
     def test_alert(self) -> dict:
-        n = self.push.send("TRADECORE test", "Your phone alerts work. Signals will come like this.", tag="test")
-        return {"ok": n > 0, "msg": f"test alert sent to {n} device(s)" if n else
-                "no device has alerts turned on yet - tap 'Turn on alerts' on your phone first"}
+        n = self._alert("TRADECORE test", "Your phone alerts work. Signals will come like this.", "test")
+        return {"ok": True, "msg": f"test alert sent (browser devices: {n}; the Android app shows it within seconds)"}

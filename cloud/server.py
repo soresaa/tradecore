@@ -104,6 +104,9 @@ ALERTS_BAR = """
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   async function refresh() {
+    if (navigator.userAgent.includes('TradecoreApp')) {      // inside the Android app: it shows the alerts itself
+      st.textContent = 'alerts: handled by the TRADECORE app'; btn.textContent = 'Send test alert'; btn.dataset.on = '1'; return;
+    }
     if (!('serviceWorker' in navigator)) { st.textContent = 'this browser cannot get alerts'; btn.style.display = 'none'; return; }
     const reg = await navigator.serviceWorker.register('/sw.js');
     if (ios && !standalone) { st.textContent = 'iPhone: tap Share > Add to Home Screen, then open the app from its icon'; return; }
@@ -203,6 +206,29 @@ def _need_login():
 @app.get("/api/state")
 def api_state():
     return _need_login() or jsonify(engine().get_state())
+
+
+@app.get("/api/events")
+def api_events():
+    """The Android app's live line (long polling): waits up to `wait` seconds for alerts numbered above `after`
+    (-1 = any). init=1 (the app's very first call): no alerts, only the newest number, so it never replays the past."""
+    if (r := _need_login()):
+        return r
+    eng = engine()
+    if request.args.get("init") == "1":
+        return jsonify({"events": [], "last": eng.last_event_id()})
+    try:
+        after = int(request.args.get("after", "-1"))
+        wait = max(0, min(int(request.args.get("wait", "0")), 50))
+    except ValueError:
+        return jsonify({"error": "bad request"}), 400
+    deadline = time.time() + wait
+    while True:
+        evs = eng.events_after(after)
+        if evs or time.time() >= deadline:
+            break
+        time.sleep(1)
+    return jsonify({"events": evs, "last": eng.last_event_id()})
 
 
 @app.post("/api/start")

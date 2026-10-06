@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The app's own signing key (a personal, side-loaded app): every build is signed the same way, so a new version
+// installs over the old one.
+android {
+    namespace 'ai.tradecore.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ai.tradecore.app'
+        minSdk 24
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionName '1.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+    }
+
+    signingConfigs {
+        shared {
+            storeFile file('tradecore.p12')
+            storePassword 'tradecore-app'
+            keyAlias 'tradecore'
+            keyPassword 'tradecore-app'
+            storeType 'pkcs12'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+        debug {
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
