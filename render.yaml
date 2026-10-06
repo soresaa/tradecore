@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: tradecore
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /ping
+    envVars:
+      - key: PROVIDER
+        value: free
+      - key: TWELVEDATA_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: HF_TOKEN
+        sync: false

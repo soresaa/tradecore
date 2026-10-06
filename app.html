@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TRADECORE AI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg0:#070a0f; --bg1:#0d1219; --glass:rgba(255,255,255,.035); --glass2:rgba(255,255,255,.055);
+    --edge:rgba(255,255,255,.08); --edge2:rgba(255,255,255,.05);
+    --ink:#eef1f6; --dim:#8e98a8; --dim2:#69728020;
+    --gold:#f5c542; --gold2:#ffdf85; --green:#35d07f; --red:#ff5f6d; --blue:#5aa9f5; --violet:#a98bff;
+    --shadow:0 10px 30px rgba(0,0,0,.45);
+    --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  }
+  html, body { height:100%; }
+  body {
+    font-family:-apple-system,"Segoe UI Variable Display","Segoe UI",Roboto,Arial,sans-serif;
+    color:var(--ink); margin:0; padding:16px 20px 26px; font-size:14px;
+    background:
+      radial-gradient(1100px 620px at 8% -8%, #16233a 0%, transparent 60%),
+      radial-gradient(900px 520px at 105% 0%, #2a1e12 0%, transparent 55%),
+      linear-gradient(180deg, var(--bg1) 0%, var(--bg0) 100%);
+    background-attachment:fixed;
+  }
+  .num { font-variant-numeric:tabular-nums; }
+
+  /* ---------- header ---------- */
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+  .brand { display:flex; gap:13px; align-items:center; }
+  .mark {
+    width:42px; height:42px; border-radius:12px; flex:none; display:grid; place-items:center;
+    background:linear-gradient(145deg,var(--gold2),#d99b16); color:#2a1d02;
+    font-weight:800; font-size:15px; letter-spacing:-.5px; box-shadow:0 6px 18px rgba(245,197,66,.3);
+  }
+  h1 { font-size:20px; margin:0; letter-spacing:.2px; font-weight:700;
+       background:linear-gradient(90deg,var(--gold2),var(--gold)); -webkit-background-clip:text;
+       background-clip:text; color:transparent; }
+  .acct { color:var(--dim); font-size:12px; margin-top:3px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px;
+          font-size:11px; font-weight:600; border:1px solid var(--edge); background:var(--glass); }
+  .pill .dot { width:7px; height:7px; border-radius:50%; background:#5b6675; }
+  .pill.live { color:#b6f0d2; border-color:rgba(53,208,127,.35); background:rgba(53,208,127,.1); }
+  .pill.live .dot { background:var(--green); box-shadow:0 0 10px var(--green); animation:pulse 1.9s infinite; }
+  .pill.err  { color:#ffc4c9; border-color:rgba(255,95,109,.4); background:rgba(255,95,109,.12); }
+  .pill.err .dot { background:var(--red); }
+  .pill.paper { color:#cfd6e2; }
+  @keyframes pulse { 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.4; transform:scale(.85)} }
+
+  .btns { display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; color:var(--ink); cursor:pointer; border-radius:10px;
+           padding:8px 14px; border:1px solid var(--edge); background:var(--glass);
+           transition:transform .12s, border-color .15s, background .15s; }
+  button:hover:not(:disabled) { border-color:rgba(245,197,66,.55); background:var(--glass2); transform:translateY(-1px); }
+  button:active:not(:disabled) { transform:translateY(0); }
+  button:disabled { opacity:.35; cursor:not-allowed; }
+  button.primary { background:linear-gradient(180deg,rgba(53,208,127,.22),rgba(53,208,127,.1));
+                   border-color:rgba(53,208,127,.4); color:#c7f7de; }
+  button.danger  { background:linear-gradient(180deg,rgba(255,95,109,.2),rgba(255,95,109,.08));
+                   border-color:rgba(255,95,109,.38); color:#ffd0d4; }
+
+  /* ---------- alert banner ---------- */
+  .banner { display:none; margin:16px 0 0; padding:15px 17px; border-radius:14px; gap:16px;
+            align-items:center; justify-content:space-between; border:1px solid; box-shadow:var(--shadow);
+            animation:drop .35s ease-out; }
+  @keyframes drop { from{opacity:0; transform:translateY(-8px)} to{opacity:1; transform:none} }
+  .banner.show { display:flex; }
+  .banner.buy  { background:linear-gradient(135deg,rgba(53,208,127,.18),rgba(53,208,127,.04)); border-color:rgba(53,208,127,.5); }
+  .banner.sell { background:linear-gradient(135deg,rgba(255,95,109,.18),rgba(255,95,109,.04)); border-color:rgba(255,95,109,.5); }
+  .banner .big { font-size:19px; font-weight:750; letter-spacing:.2px; }
+  .banner .lv { font-size:12.5px; color:#d6dce6; margin-top:4px; font-family:var(--mono); }
+
+  /* ---------- kpi strip ---------- */
+  /* fixed column counts, so the strip never breaks into an odd 7 + 1 row */
+  .kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:11px; margin:16px 0; }
+  @media (min-width:760px){ .kpis{ grid-template-columns:repeat(4,1fr); } }
+  @media (min-width:1300px){ .kpis{ grid-template-columns:repeat(8,1fr); } }
+  .kpi { position:relative; overflow:hidden; padding:13px 14px 14px; border-radius:14px;
+         background:linear-gradient(180deg,var(--glass2),var(--glass)); border:1px solid var(--edge); }
+  .kpi::after { content:""; position:absolute; inset:0 0 auto 0; height:2px; background:var(--accent,transparent); opacity:.8; }
+  .kpi .k { font-size:10px; letter-spacing:.9px; text-transform:uppercase; color:var(--dim); }
+  .kpi .v { font-size:21px; font-weight:750; margin-top:6px; letter-spacing:-.3px; }
+  .kpi .s { font-size:11px; color:var(--dim); margin-top:3px; min-height:14px; }
+  .green{color:var(--green)} .red{color:var(--red)} .gold{color:var(--gold)}
+  .blue{color:var(--blue)} .grey{color:#c3cad6} .violet{color:var(--violet)}
+
+  /* ---------- layout ---------- */
+  .cols { display:grid; grid-template-columns:1.05fr .95fr; gap:14px; align-items:start; }
+  @media (max-width:980px){ .cols{grid-template-columns:1fr} }
+  .panel { background:linear-gradient(180deg,var(--glass2),var(--glass)); border:1px solid var(--edge);
+           border-radius:16px; padding:16px 17px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .ptitle { font-size:10.5px; letter-spacing:1px; text-transform:uppercase; color:var(--dim);
+            margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .ptitle .hint { text-transform:none; letter-spacing:0; font-size:11px; color:#6f7a8a; font-weight:400; }
+
+  .chips { display:flex; flex-wrap:wrap; gap:7px; }
+  /* --- markets panel (forward test of the non-gold markets) --- */
+  .mkt { width:100%; border-collapse:collapse; font-size:12px; }
+  .mkt th { text-align:left; font-weight:600; color:var(--dim); font-size:10px; letter-spacing:.8px;
+            text-transform:uppercase; padding:6px 8px; border-bottom:1px solid var(--edge); }
+  .mkt td { padding:8px; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:top; }
+  .mkt tr:last-child td { border-bottom:0; }
+  .mkt .nm { font-weight:600; color:#e8edf5; }
+  .mkt .sub { color:#6f7a8a; font-size:10.5px; max-width:230px; overflow:hidden; text-overflow:ellipsis;
+              display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .mkt td:last-child { white-space:nowrap; }
+  .badge { display:inline-block; padding:2px 7px; border-radius:999px; font-size:9.5px; letter-spacing:.6px;
+           font-weight:700; text-transform:uppercase; }
+  .badge.tested   { color:#b6f0d2; background:rgba(53,208,127,.14); border:1px solid rgba(53,208,127,.35); }
+  .badge.holdout  { color:#a8dcff; background:rgba(90,178,255,.12); border:1px solid rgba(90,178,255,.40); }
+  .badge.unproven { color:#ffd9a8; background:rgba(255,176,70,.12); border:1px solid rgba(255,176,70,.35); }
+  .badge.weak     { color:#ffc4c9; background:rgba(255,95,109,.10); border:1px solid rgba(255,95,109,.30); }
+  tr.research td { opacity:.5; }
+  tr.divider td { padding:10px 8px 4px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#ffd9a8; opacity:.8; border-top:1px solid rgba(255,176,70,.25); }
+  .lvls { display:flex; gap:10px; flex-wrap:wrap; font-family:var(--mono); font-size:11px; }
+  .lvls b { font-weight:600; }
+  .lvl-e { color:#cfd6e2; } .lvl-s { color:#ff7d86; } .lvl-1 { color:#7fd7ff; } .lvl-2 { color:#5ee39f; }
+  .live { color:#8fa0b5; font-size:10.5px; margin-top:3px; }
+  .live b { color:#cfd6e2; font-weight:600; }
+  .live .dotlive { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--green);
+                   margin-right:5px; vertical-align:middle; animation:pulse 1.9s infinite; }
+  .chip { display:inline-flex; align-items:center; gap:7px; padding:6px 11px; border-radius:10px;
+          font-size:12px; border:1px solid var(--edge); background:rgba(255,255,255,.03); }
+  .chip b { font-weight:650; letter-spacing:.2px; }
+  .chip.bull b { color:var(--green); } .chip.bear b { color:var(--red); } .chip.flat b { color:#c3cad6; }
+  .chip .lab { color:var(--dim); font-size:11px; }
+
+  .reason { margin-top:12px; padding:12px 14px; border-radius:12px; font-size:13px; line-height:1.55;
+            color:#dde3ec; background:rgba(245,197,66,.06); border:1px solid rgba(245,197,66,.22);
+            border-left:3px solid var(--gold); }
+
+  .scorewrap { display:flex; align-items:center; gap:16px; margin-top:14px; }
+  .gauge { position:relative; width:86px; height:86px; flex:none; }
+  .gauge svg { transform:rotate(-90deg); }
+  .gauge .mid { position:absolute; inset:0; display:grid; place-items:center; font-size:19px; font-weight:750; }
+  .scoremeta { flex:1; min-width:0; }
+  .bar { height:8px; border-radius:6px; background:rgba(255,255,255,.07); overflow:hidden; margin:9px 0 7px; }
+  .bar > i { display:block; height:100%; width:0; border-radius:6px;
+             background:linear-gradient(90deg,#d99b16,var(--gold2)); transition:width .45s cubic-bezier(.2,.8,.2,1); }
+
+  table { width:100%; border-collapse:collapse; }
+  th { position:sticky; top:0; z-index:1; text-align:left; padding:9px 10px; font-size:10px; letter-spacing:.8px;
+       text-transform:uppercase; color:var(--dim); background:#131a24; border-bottom:1px solid var(--edge); white-space:nowrap; }
+  td { padding:9px 10px; border-top:1px solid var(--edge2); font-size:12.5px; white-space:nowrap; }
+  tbody tr:hover { background:rgba(255,255,255,.028); }
+  .tag { padding:2px 9px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.4px; }
+  .tag.buy{background:rgba(53,208,127,.16); color:var(--green)}
+  .tag.sell{background:rgba(255,95,109,.16); color:var(--red)}
+  .tag.open{background:rgba(245,197,66,.16); color:var(--gold)}
+  .rcell { font-family:var(--mono); font-weight:650; }
+  .tw { overflow:auto; max-height:300px; border-radius:12px; border:1px solid var(--edge2); }
+  .empty { padding:30px 16px; text-align:center; color:#68727f; font-size:13px; }
+
+  .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .row + .row { margin-top:11px; }
+  label.set { font-size:12.5px; color:var(--dim); min-width:176px; }
+  input[type=number], input[type=text], select { font:inherit; font-size:13px; color:var(--ink); width:100px;
+      background:rgba(0,0,0,.28); border:1px solid var(--edge); border-radius:9px; padding:7px 10px; }
+  select { width:auto; max-width:230px; }
+  select option { background:#141b24; }
+  input:focus { outline:none; border-color:rgba(245,197,66,.55); }
+  .sw { width:40px; height:21px; border-radius:999px; background:rgba(255,255,255,.12); position:relative;
+        cursor:pointer; transition:background .2s; flex:none; }
+  .sw.on { background:linear-gradient(90deg,#2aa96a,var(--green)); }
+  .sw i { position:absolute; top:2.5px; left:2.5px; width:16px; height:16px; border-radius:50%;
+          background:#fff; transition:left .2s cubic-bezier(.2,.8,.2,1); }
+  .sw.on i { left:21.5px; }
+
+  #log { background:rgba(0,0,0,.42); border:1px solid var(--edge2); border-radius:12px; padding:11px 13px;
+         font-family:var(--mono); font-size:11.5px; color:#9fb0c6; max-height:180px; overflow-y:auto;
+         white-space:pre-wrap; line-height:1.6; }
+  .note { font-size:11.5px; color:#727d8d; margin-top:10px; line-height:1.55; }
+  .note b { color:#aab4c2; }
+  /* ---------- simple view ---------- */
+  .viewbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin:16px 0 4px; }
+  .seg { display:inline-flex; border:1px solid var(--edge); border-radius:11px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; padding:8px 18px; background:transparent; }
+  .seg button.on { background:linear-gradient(180deg,rgba(245,197,66,.25),rgba(245,197,66,.1)); color:var(--gold2); }
+  .riskset { font-size:12.5px; color:var(--dim); display:flex; align-items:center; gap:8px; }
+  .riskset input { width:80px; }
+  .sumrow { display:grid; grid-template-columns:repeat(3,1fr); gap:11px; margin:12px 0 14px; }
+  @media (max-width:700px){ .sumrow{ grid-template-columns:1fr; } }
+  .sum { padding:14px 16px; border-radius:14px; background:linear-gradient(180deg,var(--glass2),var(--glass)); border:1px solid var(--edge); }
+  .sum .k { font-size:10.5px; letter-spacing:.9px; text-transform:uppercase; color:var(--dim); }
+  .sum .v { font-size:26px; font-weight:800; margin-top:6px; letter-spacing:-.4px; }
+  .sum .s { font-size:12px; color:var(--dim); margin-top:3px; }
+  .cards { display:grid; grid-template-columns:1fr; gap:13px; }
+  @media (min-width:900px){ .cards{ grid-template-columns:1fr 1fr; } }
+  .card { position:relative; padding:16px 17px 14px 20px; border-radius:16px; border:1px solid var(--edge);
+          background:linear-gradient(180deg,var(--glass2),var(--glass)); box-shadow:var(--shadow); overflow:hidden; }
+  .card::before { content:""; position:absolute; inset:0 auto 0 0; width:4px; background:#3a4352; }
+  .card.st-openbuy::before { background:var(--green); }
+  .card.st-opensell::before { background:var(--red); }
+  .card.st-wait::before { background:var(--violet); }
+  .card .ch { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .card .cn { font-size:15.5px; font-weight:700; color:#eef1f6; }
+  .card .cp { font-size:12px; color:var(--dim); font-family:var(--mono); }
+  .card .cs { font-size:24px; font-weight:850; letter-spacing:.3px; margin:10px 0 4px; }
+  .card .cw { font-size:13.5px; line-height:1.5; color:#dfe5ee; }
+  .card .cw b { color:var(--gold2); }
+  .card .ct { font-size:11.5px; color:#8e98a8; margin-top:6px; }
+  .card .clv { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:12px; }
+  @media (max-width:520px){ .card .clv{ grid-template-columns:1fr 1fr; } }
+  .card .clv > div { padding:8px 9px; border-radius:10px; background:rgba(0,0,0,.25); border:1px solid var(--edge2); }
+  .card .clv .l { font-size:10px; color:var(--dim); letter-spacing:.6px; text-transform:uppercase; }
+  .card .clv .p { font-family:var(--mono); font-size:13px; font-weight:650; margin-top:2px; }
+  .card .clv .m { font-size:11px; margin-top:1px; }
+  .card .cf { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:12px; padding-top:10px;
+              border-top:1px solid var(--edge2); font-size:12px; color:#aeb7c4; }
+  .card details { margin-top:8px; font-size:12.5px; color:#b8c1ce; }
+  .card summary { cursor:pointer; color:var(--gold); font-size:12px; }
+  .card ul { margin:8px 0 2px; padding-left:18px; line-height:1.55; }
+  .card .rec { font-family:var(--mono); font-size:11px; color:#8e98a8; margin-top:6px; }
+  .hidden { display:none !important; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.12); border-radius:9px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">
+    <div class="mark">TC</div>
+    <div>
+      <h1>TRADECORE AI</h1>
+      <div class="acct">
+        <span id="acct">connecting…</span>
+        <span class="pill paper" title="This app never sends orders">PAPER · no orders</span>
+        <span class="pill" id="statePill"><span class="dot"></span><span id="stateTxt">starting</span></span>
+      </div>
+    </div>
+  </div>
+  <div class="btns">
+    <button id="btnStart" class="primary">Start</button>
+    <button id="btnStop" class="danger">Stop</button>
+    <button id="btnTest">Test alarm</button>
+    <button id="btnFolder">Open folder</button>
+  </div>
+</div>
+
+<div class="banner" id="banner">
+  <div>
+    <div class="big" id="bnTitle"></div>
+    <div class="lv" id="bnLevels"></div>
+  </div>
+  <button id="bnDismiss">Dismiss</button>
+</div>
+
+<div class="viewbar">
+  <div class="seg"><button id="vSimple" class="on">Simple</button><button id="vAdv">Advanced</button></div>
+  <div class="riskset">My risk per trade ($)
+    <input type="number" id="riskUsd" min="0.05" step="0.05" value="0.40" title="what one stop-loss costs you; every R is turned into dollars with it">
+  </div>
+</div>
+
+<div id="simpleView">
+  <div class="sumrow">
+    <div class="sum"><div class="k">Today</div><div class="v num" id="sumToday">—</div><div class="s" id="sumTodayS">closed trades today</div></div>
+    <div class="sum"><div class="k">All paper trades</div><div class="v num" id="sumAll">—</div><div class="s" id="sumAllS">since the app started recording</div></div>
+    <div class="sum"><div class="k">Open now</div><div class="v num" id="sumOpen">0</div><div class="s">paper only · no real orders</div></div>
+  </div>
+  <div class="cards" id="cards"></div>
+  <div class="note">Every trade here is a <b>paper trade</b> on the Exness demo feed — the app never places orders.
+    Dollars = R × your risk per trade. Judge a strategy only after about <b>40 closed trades</b>.</div>
+</div>
+
+<div id="advView" class="hidden">
+
+<div class="kpis">
+  <div class="kpi" style="--accent:var(--gold)"><div class="k">Price</div><div class="v gold num" id="cPrice">—</div><div class="s" id="sPrice">XAU/USD</div></div>
+  <div class="kpi" style="--accent:var(--blue)"><div class="k">Engine</div><div class="v grey" id="cVerdict">—</div><div class="s" id="sVerdict">waiting</div></div>
+  <div class="kpi"><div class="k">Open position</div><div class="v grey" id="cOpen">None</div><div class="s" id="sOpen">one at a time</div></div>
+  <div class="kpi"><div class="k">Closed trades</div><div class="v grey num" id="cClosed">0</div><div class="s" id="sClosed">need ~200</div></div>
+  <div class="kpi"><div class="k">Win rate</div><div class="v grey num" id="cWin">—</div><div class="s">backtest 37.6%</div></div>
+  <div class="kpi" style="--accent:var(--green)"><div class="k">Net R</div><div class="v grey num" id="cR">—</div><div class="s" id="sR">after spread + swap</div></div>
+  <div class="kpi"><div class="k">Profit factor</div><div class="v grey num" id="cPF">—</div><div class="s">backtest 1.34 net</div></div>
+  <div class="kpi" style="--accent:var(--violet)"><div class="k">Next decision</div><div class="v violet num" id="cNext">—</div><div class="s" id="sNext">on the closed candle</div></div>
+</div>
+
+<div class="cols">
+  <div>
+    <div class="panel">
+      <div class="ptitle">Engine status <span class="hint">why it is / isn't trading</span></div>
+      <div class="chips" id="tfChips"></div>
+      <div class="reason" id="reason">Waiting for the first evaluation…</div>
+
+      <div class="ptitle" style="margin:16px 0 0">Setup score <span class="hint">how many rules lined up — not a win probability</span></div>
+      <div class="scorewrap">
+        <div class="gauge">
+          <svg width="86" height="86" viewBox="0 0 86 86">
+            <circle cx="43" cy="43" r="36" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9"/>
+            <circle id="gArc" cx="43" cy="43" r="36" fill="none" stroke="url(#gg)" stroke-width="9"
+                    stroke-linecap="round" stroke-dasharray="226" stroke-dashoffset="226"
+                    style="transition:stroke-dashoffset .5s cubic-bezier(.2,.8,.2,1)"/>
+            <defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#d99b16"/><stop offset="100%" stop-color="#ffdf85"/>
+            </linearGradient></defs>
+          </svg>
+          <div class="mid num" id="gTxt">—</div>
+        </div>
+        <div class="scoremeta">
+          <div class="bar"><i id="confBar"></i></div>
+          <div class="note" id="confNote" style="margin-top:6px">The engine trades at 60+. Measured across 255 backtested
+            trades this score did <b>not</b> predict the outcome, so treat it as a description of the setup.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">Equity curve <span class="hint" id="eqHint">cumulative R</span></div>
+      <svg id="equity" width="100%" height="150" viewBox="0 0 620 150" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div class="ptitle">Settings</div>
+      <div class="row"><label class="set">Decide every</label>
+        <select id="sDecide">
+          <option value="60">60 min — tested best: PF 1.42, worst drop −13R</option>
+          <option value="15">15 min — PF 1.22, worst drop −25R</option>
+          <option value="5">5 min — most trades: PF 1.17, worst drop −36R</option>
+        </select>
+        <span class="note" style="margin:0">after Stop → Start</span></div>
+      <div class="row"><label class="set">Check every (seconds)</label>
+        <input type="number" id="sPoll" min="5" max="300" step="5">
+        <span class="note" style="margin:0">5–300 · how often the app looks</span></div>
+      <div class="row"><label class="set">Alarm at setup score ≥</label>
+        <input type="number" id="sConf" min="0" max="100" step="5">
+        <span class="note" style="margin:0">% · not a win probability</span></div>
+      <div class="row"><label class="set">Strategy</label>
+        <select id="sStrategy">
+          <option value="indie_trend">Indie + trend filter — 2004-21 PF 1.17</option>
+          <option value="indie">Indie, unfiltered — 2004-21 PF 1.06</option>
+          <option value="engine">Original engine — 2021-26 PF 1.05</option>
+        </select>
+        <span class="note" style="margin:0">after Stop → Start</span></div>
+      <div class="row"><label class="set">Symbol</label>
+        <input type="text" id="sSymbol" style="width:132px"></div>
+      <div class="row"><label class="set">Alarm sound</label><div class="sw" id="sSound"><i></i></div></div>
+      <div class="row"><label class="set">Desktop notification</label><div class="sw" id="sToast"><i></i></div></div>
+      <div class="row"><label class="set">Start automatically</label><div class="sw" id="sAuto"><i></i></div></div>
+      <div class="row"><button id="btnSave" class="primary">Save settings</button>
+        <span class="note" id="saveMsg" style="margin:0"></span></div>
+      <div class="note">The gold strategy decides on the closed candle every <b>"Decide every"</b> minutes
+        (60 = the tested live rule). "Check every" only sets how fast the app looks.
+        Changes apply after Stop → Start.</div>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">Trade history <span class="hint" id="thHint">gross R · net R after costs</span></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Opened</th><th>Dir</th><th>Entry</th><th>SL</th><th>TP2</th><th>Score</th><th>Status</th><th>R</th><th>Net</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="ptitle">Markets <span class="hint" id="mktHint">gold is the tested one · the others are a forward test, paper only</span></div>
+  <div class="tw">
+    <table class="mkt">
+      <thead><tr><th>Market</th><th>Status</th><th>Price</th><th>Now</th><th>Entry / SL / TP</th><th>Forward record</th></tr></thead>
+      <tbody id="mktRows"><tr><td colspan="6" class="empty">starting…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="note"><b>Gold</b> is the tested live strategy (2004-2026: +113R, PF 1.25).
+    <b>Bitcoin</b> passed a sealed test on one data feed (PF 1.58) but is flat on Binance's data over 2018-2026 and
+    fails on Ethereum — so it is <b>fragile</b> and only being recorded.
+    <b>EUR/USD and GBP/USD</b> failed every bar and are only being recorded; <b>USD/JPY</b> lost money in the
+    older half of its history. No orders are placed for any of them.</div>
+</div>
+
+<div class="panel">
+  <div class="ptitle">Activity log</div>
+  <div id="log">starting…</div>
+  <div class="note">This app places <b>no orders</b> — it reads prices from MT5 and records paper trades to
+    <span id="jp" class="num"></span>. Forward results are data collection, not proof of an edge: the backtest
+    edge (PF 1.34 net) has a 95% range of 0.99–1.80, so a few dozen trades cannot confirm it.</div>
+</div>
+
+</div><!-- /advView -->
+
+<script>
+const $ = id => document.getElementById(id);
+const fx = (v, d = 2) => (v === null || v === undefined || v === '' || isNaN(v)) ? '—' : Number(v).toFixed(d);
+const num = v => (v === null || v === undefined || v === '' || isNaN(v)) ? null : Number(v);
+let ready = false, lastAlertKey = null, dismissed = null, settingsDirty = false, preview = false;
+
+/* ---------- controls ---------- */
+['sSound', 'sToast', 'sAuto'].forEach(id =>
+  $(id).addEventListener('click', () => { $(id).classList.toggle('on'); settingsDirty = true; }));
+['sPoll', 'sConf', 'sSymbol', 'sStrategy', 'sDecide'].forEach(id =>
+  $(id).addEventListener('input', () => settingsDirty = true));
+
+const api = () => (window.pywebview && window.pywebview.api) || null;
+$('btnStart').onclick  = async () => { if (api()) { await api().start(); refresh(); } };
+$('btnStop').onclick   = async () => { if (api()) { await api().stop();  refresh(); } };
+$('btnTest').onclick   = async () => { if (api()) await api().test_alert(); };
+$('btnFolder').onclick = async () => { if (api()) await api().open_folder(); };
+$('bnDismiss').onclick = () => { dismissed = lastAlertKey; $('banner').classList.remove('show'); };
+
+$('btnSave').onclick = async () => {
+  if (!api()) return;
+  const r = await api().save_settings({
+    decision_minutes: parseInt($('sDecide').value, 10),
+    poll_seconds: parseInt($('sPoll').value, 10),
+    min_alert_confidence: parseInt($('sConf').value, 10),
+    symbol: $('sSymbol').value,
+    strategy: $('sStrategy').value,
+    sound_on: $('sSound').classList.contains('on'),
+    toast_on: $('sToast').classList.contains('on'),
+    autostart: $('sAuto').classList.contains('on'),
+  });
+  settingsDirty = false;
+  $('saveMsg').textContent = r.ok ? 'saved ✓' : ('error: ' + r.msg);
+  setTimeout(() => $('saveMsg').textContent = '', 2500);
+};
+
+/* ---------- equity chart ---------- */
+function drawEquity(pts) {
+  const svg = $('equity'), W = 620, H = 150, pad = 14;
+  if (!pts || pts.length < 2) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#5c6675" font-size="13" text-anchor="middle">
+      Not enough closed trades yet</text>`;
+    $('eqHint').textContent = 'cumulative R';
+    return;
+  }
+  const min = Math.min(0, ...pts), max = Math.max(0, ...pts), range = (max - min) || 1;
+  const X = i => pad + (i / (pts.length - 1)) * (W - pad * 2);
+  const Y = v => H - pad - ((v - min) / range) * (H - pad * 2);
+  const line = pts.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  const area = `${line}L${X(pts.length - 1).toFixed(1)},${Y(min).toFixed(1)}L${X(0).toFixed(1)},${Y(min).toFixed(1)}Z`;
+  const last = pts[pts.length - 1], up = last >= 0;
+  const col = up ? 'var(--green)' : 'var(--red)';
+  let peak = -Infinity, dd = 0;
+  pts.forEach(v => { peak = Math.max(peak, v); dd = Math.min(dd, v - peak); });
+  svg.innerHTML = `
+    <defs><linearGradient id="eqf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${up ? '#35d07f' : '#ff5f6d'}" stop-opacity=".34"/>
+      <stop offset="100%" stop-color="${up ? '#35d07f' : '#ff5f6d'}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <line x1="0" y1="${Y(0).toFixed(1)}" x2="${W}" y2="${Y(0).toFixed(1)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="4,4"/>
+    <path d="${area}" fill="url(#eqf)"/>
+    <path d="${line}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${X(pts.length - 1).toFixed(1)}" cy="${Y(last).toFixed(1)}" r="4.5" fill="${col}"/>
+    <circle cx="${X(pts.length - 1).toFixed(1)}" cy="${Y(last).toFixed(1)}" r="9" fill="${col}" opacity=".22"/>`;
+  $('eqHint').textContent = `${pts.length} closed · peak ${fx(Math.max(...pts))}R · worst drawdown ${fx(dd)}R`;
+}
+
+/* ---------- next decision: the decision candle (open time a multiple of D minutes) closes 5 min later ---------- */
+let decideEvery = 60;
+function nextDecision() {
+  const now = new Date(), m = now.getMinutes(), s = now.getSeconds(), D = decideEvery;
+  let mins = (((5 - m) % D) + D) % D;
+  if (mins === 0 && s > 0) mins = D;
+  const total = mins * 60 - s;
+  return { mins, txt: mins >= 1 ? `${mins}m` : `${Math.max(total, 0)}s` };
+}
+
+/* ---------- render ---------- */
+function render(s) {
+  const err = s.last_error && !s.connected;
+  const pill = $('statePill');
+  pill.className = 'pill ' + (err ? 'err' : (s.running && s.connected ? 'live' : ''));
+  $('stateTxt').textContent = preview ? 'preview' : err ? 'error' : (s.running ? (s.connected ? 'live' : 'connecting') : 'stopped');
+  const a = s.account;
+  $('acct').textContent = (s.symbol || '—') + ' · ' +
+    (a ? `${a.login} @ ${a.server} ${a.demo ? '(DEMO)' : '(⚠ NOT DEMO)'}` : 'not connected') +
+    (s.last_error ? ' · ' + s.last_error : '');
+  $('btnStart').disabled = !!s.running || preview;
+  $('btnStop').disabled = !s.running || preview;
+
+  $('cPrice').textContent = fx(s.price, 3);
+  if (s.settings && s.settings.decision_minutes) decideEvery = parseInt(s.settings.decision_minutes, 10) || 60;
+  const nd = nextDecision();
+  $('cNext').textContent = s.running ? nd.txt : '—';
+  $('sNext').textContent = s.running
+    ? `check in ${s.seconds_to_next === null ? '—' : s.seconds_to_next + 's'} · ` +
+      (decideEvery === 60 ? 'decision on the :00 candle' : `decision every ${decideEvery} min`)
+    : 'engine stopped';
+
+  const sig = s.signal, v = sig ? sig.verdict : '—';
+  $('cVerdict').textContent = v;
+  $('cVerdict').className = 'v ' + (v === 'BUY' ? 'green' : v === 'SELL' ? 'red' : 'grey');
+  $('sVerdict').textContent = sig ? (s.signal_at || '').replace('T', ' ').slice(0, 16) : 'waiting';
+
+  const op = s.open_position;
+  $('cOpen').textContent = op ? String(op.direction).toUpperCase() : 'None';
+  $('cOpen').className = 'v ' + (op ? 'gold' : 'grey');
+  $('sOpen').textContent = op ? `entry ${fx(op.entry)} · SL ${fx(op.sl)}` : 'one at a time';
+
+  const st = s.stats, trades = s.trades || [];
+  const closed = trades.filter(t => t.status === 'closed');
+  const nets = closed.map(t => num(t.r_net)).filter(x => x !== null);
+  const netTotal = nets.reduce((x, y) => x + y, 0);
+  $('cClosed').textContent = st ? st.closed : 0;
+  $('sClosed').textContent = st && st.closed ? `${trades.length} signals` : 'need ~200';
+  $('cWin').textContent = st ? st.win_rate + '%' : '—';
+  $('cWin').className = 'v num ' + (st ? (st.win_rate >= 37 ? 'green' : 'red') : 'grey');
+
+  const showNet = nets.length === closed.length && closed.length > 0;
+  const shown = showNet ? netTotal : (st ? st.total_r : null);
+  $('cR').textContent = shown === null ? '—' : (shown >= 0 ? '+' : '') + fx(shown) + 'R';
+  $('cR').className = 'v num ' + (shown === null ? 'grey' : shown >= 0 ? 'green' : 'red');
+  $('sR').textContent = showNet ? 'after spread + swap' : (st ? 'gross (no net yet)' : 'after spread + swap');
+
+  const pf = st ? st.profit_factor : null;
+  $('cPF').textContent = pf === null || pf === undefined ? '—' : (pf === 'Infinity' ? '∞' : fx(pf));
+  $('cPF').className = 'v num ' + (pf && pf !== 'Infinity' ? (pf >= 1 ? 'green' : 'red') : 'grey');
+
+  let chips = '';
+  if (sig && sig.timeframes) {
+    for (const [k, val] of Object.entries(sig.timeframes)) {
+      const up = String(val).toUpperCase();
+      const cls = up.includes('BULL') ? 'bull' : up.includes('BEAR') ? 'bear' : 'flat';
+      chips += `<span class="chip ${cls}"><span class="lab">${k}</span><b>${up}</b></span>`;
+    }
+  }
+  $('tfChips').innerHTML = chips || '<span class="chip flat"><span class="lab">timeframes</span><b>waiting for data</b></span>';
+  $('reason').textContent = !sig ? 'Waiting for the first evaluation…'
+    : (sig.verdict === 'NO TRADE' ? (sig.reason || 'No setup.')
+      : `${sig.verdict} — entry ${sig.plan ? sig.plan.entry : '?'} · SL ${sig.plan ? sig.plan.sl : '?'} · TP1 ${sig.plan ? sig.plan.tp1 : '?'} · TP2 ${sig.plan ? sig.plan.tp2 : '?'}`);
+
+  const conf = sig ? sig.confidence : 0;
+  const pct = Math.max(0, Math.min(100, conf));
+  $('confBar').style.width = pct + '%';
+  $('gArc').style.strokeDashoffset = (226 - 226 * pct / 100).toFixed(1);
+  $('gTxt').textContent = sig ? conf + '%' : '—';
+
+  if (s.alerts && s.alerts.length) {
+    const al = s.alerts[0], key = al.at + al.verdict;
+    lastAlertKey = key;
+    if (dismissed !== key) {
+      $('banner').className = 'banner show ' + (al.verdict === 'BUY' ? 'buy' : 'sell');
+      $('bnTitle').textContent = `${al.verdict}  ·  setup score ${al.confidence}%  ·  ${al.at}`;
+      $('bnLevels').textContent = `Entry ${al.plan.entry}   SL ${al.plan.sl}   TP1 ${al.plan.tp1}   TP2 ${al.plan.tp2}`;
+    }
+  }
+
+  const rows = trades.slice().reverse();
+  $('rows').innerHTML = rows.length ? rows.map(t => {
+    const done = t.status === 'closed', r = num(t.r_multiple), rn = num(t.r_net);
+    const cell = x => x === null ? '—' : (x >= 0 ? '+' : '') + fx(x) + 'R';
+    return `<tr>
+      <td class="num">${String(t.time_opened || '').replace('T', ' ').slice(0, 16)}</td>
+      <td><span class="tag ${t.direction}">${String(t.direction || '').toUpperCase()}</span></td>
+      <td class="num">${fx(t.entry)}</td><td class="num">${fx(t.sl)}</td><td class="num">${fx(t.tp2)}</td>
+      <td class="num">${t.confidence ?? ''}%</td>
+      <td>${done ? (t.outcome || '') : '<span class="tag open">OPEN</span>'}</td>
+      <td class="rcell ${done ? (r > 0 ? 'green' : 'red') : 'gold'}">${done ? cell(r) : '—'}</td>
+      <td class="rcell ${done && rn !== null ? (rn > 0 ? 'green' : 'red') : 'grey'}">${done ? cell(rn) : '—'}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="9" class="empty">No signals yet — the engine is waiting for a valid setup.</td></tr>';
+
+  renderMarkets(s.markets || []);
+  renderSimple(s);
+
+  drawEquity(st ? st.equity : null);
+
+  const lg = $('log');
+  const atBottom = lg.scrollHeight - lg.scrollTop - lg.clientHeight < 30;
+  lg.textContent = (s.log || []).join('\n');
+  if (atBottom) lg.scrollTop = lg.scrollHeight;
+  $('jp').textContent = s.journal_path || '';
+
+  if (!settingsDirty && s.settings) {
+    $('sPoll').value = s.settings.poll_seconds;
+    $('sConf').value = s.settings.min_alert_confidence;
+    $('sSymbol').value = s.settings.symbol;
+    if (s.settings.strategy) $('sStrategy').value = s.settings.strategy;
+    $('sDecide').value = String(s.settings.decision_minutes || 60);
+    ['sSound', 'sToast', 'sAuto'].forEach((id, i) =>
+      $(id).classList.toggle('on', !!s.settings[['sound_on', 'toast_on', 'autostart'][i]]));
+  }
+}
+
+function renderMarkets(ms) {
+  const body = $('mktRows');
+  const nd = nextDecision();
+  const at = new Date(Date.now() + nd.mins * 60000);
+  const fast = ms.some(m => m.decision_minutes && m.decision_minutes < 60);
+  $('mktHint').textContent = 'live view updates every 5-minute candle · next hourly entry decision at ' +
+    at.getHours().toString().padStart(2, '0') + ':05 (in ' + nd.txt + ')' +
+    (fast ? ' · gold round numbers decides on every 5-minute candle' : '') +
+    (ms.some(m => m.decision_minutes >= 240) ? ' · 4h breakout decides when each 4h candle closes (00 04 08 12 16 20 UTC)' : '') +
+    ' · paper only';
+  if (!ms.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Forward markets are off, or still connecting.</td></tr>';
+    return;
+  }
+  const tested = m => m.status === 'TESTED' || m.status === 'TEST-PASSED';
+  ms = ms.filter(tested).concat(ms.filter(m => !tested(m)));       // tested strategies first, research below a divider
+  let dividerShown = false;
+  body.innerHTML = ms.map(m => {
+    let pre = '';
+    if (!tested(m) && !dividerShown) {
+      dividerShown = true;
+      pre = '<tr class="divider"><td colspan="6">Research only — these did NOT pass a test. Do not trade them.</td></tr>';
+    }
+    return pre + mktRow(m);
+  }).join('');
+}
+
+function mktRow(m) {
+  {
+    const d = m.digits === undefined || m.digits === null ? 2 : m.digits;
+    const sig = m.signal, op = m.open, rec = m.record || {};
+    const badge = (m.status === 'TESTED' || m.status === 'TEST-PASSED') ? 'tested'
+      : m.status === 'HOLDOUT-PASSED' ? 'holdout'
+      : (m.status === 'WEAK' || m.status === 'FRAGILE' ? 'weak' : 'unproven');
+    let now, levels;
+    if (m.error) {
+      now = '<span class="red">' + m.error.slice(0, 70) + '</span>'; levels = '—';
+    } else if (op) {
+      now = '<b class="' + (op.direction === 'buy' ? 'green' : 'red') + '">' +
+            op.direction.toUpperCase() + ' open</b>' + (op.tp1_hit ? '<div class="sub">TP1 hit — stop at entry</div>' : '');
+      levels = lvlHtml(op.entry, op.sl, op.tp1, op.tp2, d, m, op.closes_at);
+    } else if (m.kind === 'noise' && m.noise) {
+      const n = m.noise, p = n.position;
+      now = p ? '<b class="' + (p.direction === 'buy' ? 'green' : 'red') + '">' + p.direction.toUpperCase() + ' open</b>'
+              : '<span class="grey">' + (n.in_session ? 'no trade' : 'market closed') + '</span>';
+      levels = p ? 'entry <b>' + fx(p.entry, 2) + '</b>' + (n.stop !== null && n.stop !== undefined ? ' · out below/above <b>' + fx(n.stop, 2) + '</b>' : '') + ' · closed by 16:00 NY'
+                 : (n.upper !== null && n.upper !== undefined ? 'buy above <b>' + fx(n.upper, 2) + '</b> · sell below <b>' + fx(n.lower, 2) + '</b> at the next half-hour check'
+                                                             : '<span class="sub">checks 10:00-15:30 New York</span>');
+    } else if (sig && (sig.verdict === 'BUY' || sig.verdict === 'SELL') && sig.plan) {
+      now = '<b class="' + (sig.verdict === 'BUY' ? 'green' : 'red') + '">' + sig.verdict + '</b>';
+      levels = lvlHtml(sig.plan.entry, sig.plan.sl, sig.plan.tp1, sig.plan.tp2, d, m);
+    } else {
+      const pv = m.preview;
+      now = '<span class="grey">no trade</span>';
+      // the newest thing we know: the live candle-by-candle view, else the last hourly decision
+      const reason = pv && pv.reason ? pv.reason : (sig && sig.reason ? sig.reason : 'reading the market…');
+      levels = '<span class="sub" style="-webkit-line-clamp:3">' + reason + '</span>';
+    }
+    const pv = m.preview;
+    if (pv && pv.bar && !m.error) {
+      const tfs = Object.entries(pv.timeframes || {}).map(([k, v]) => k + ' <b>' + v + '</b>').join(' · ');
+      let when = pv.bar;
+      if (pv.bar_utc) { const d = new Date(pv.bar_utc); if (!isNaN(d)) when = d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0'); }
+      now += '<div class="live"><span class="dotlive"></span>live · ' + when + ' candle</div>';
+      if (tfs) levels += '<div class="live">' + tfs + '</div>';
+    }
+    const rTxt = m.kind === 'noise' ? pts(rec.points_net)
+      : rec.total_r === null || rec.total_r === undefined ? '—'
+      : (rec.total_r > 0 ? '+' : '') + fx(rec.total_r, 2) + 'R';
+    return `<tr class="${badge === 'tested' ? '' : 'research'}">
+      <td><div class="nm">${m.name}</div><div class="sub">${m.strategy}</div></td>
+      <td><span class="badge ${badge}">${m.status}</span><div class="sub" title="${(m.evidence||'').replace(/"/g,'&quot;')}">${(m.evidence||'').slice(0,46)}…</div></td>
+      <td class="num">${fx(m.price, d)}</td>
+      <td>${now}</td>
+      <td>${levels}</td>
+      <td class="num">${rec.closed || 0} closed · ${rTxt}${rec.win_rate !== null && rec.win_rate !== undefined ? ' · ' + rec.win_rate + '% won' : ''}</td>
+    </tr>`;
+  }
+}
+
+function lvlHtml(e, sl, tp1, tp2, d, m, closesAt) {
+  if (m && m.no_target) {             // time-exit strategy: its TP levels are never reached
+    let exitTxt = 'after ' + (m.max_hold || 2) + 'h';
+    const t = closesAt ? new Date(closesAt) : null;
+    if (t && !isNaN(t)) exitTxt = 'at ' + t.getHours().toString().padStart(2, '0') + ':' + t.getMinutes().toString().padStart(2, '0');
+    return '<div class="lvls">' +
+      '<span class="lvl-e">ET <b>' + fx(e, d) + '</b></span>' +
+      '<span class="lvl-s">SL <b>' + fx(sl, d) + '</b></span>' +
+      '<span class="lvl-1">no target · closes <b>' + exitTxt + '</b></span></div>';
+  }
+  return '<div class="lvls">' +
+    '<span class="lvl-e">ET <b>' + fx(e, d) + '</b></span>' +
+    '<span class="lvl-s">SL <b>' + fx(sl, d) + '</b></span>' +
+    '<span class="lvl-1">TP1 <b>' + fx(tp1, d) + '</b></span>' +
+    '<span class="lvl-2">TP2 <b>' + fx(tp2, d) + '</b></span></div>';
+}
+
+/* ======================= SIMPLE VIEW ======================= */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+};
+let lastState = null;
+function riskUsd() { const v = parseFloat($('riskUsd').value); return isFinite(v) && v > 0 ? v : 0.40; }
+const usd = r => (r === null || r === undefined || isNaN(r)) ? '—' : (r >= 0 ? '+$' : '−$') + Math.abs(r * riskUsd()).toFixed(2);
+const rTxt = r => (r === null || r === undefined || isNaN(r)) ? '—' : (r >= 0 ? '+' : '') + Number(r).toFixed(2) + 'R';
+const hhmm = d => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+const isTrue = x => x === true || String(x).toLowerCase() === 'true' || String(x) === '1';
+function nextUtcBoundary(hours) {           // when the next candle of `hours` UTC hours closes, local clock
+  const now = Date.now(), step = hours * 3600000;
+  return new Date(Math.floor(now / step) * step + step);
+}
+function setView(v) {
+  $('simpleView').classList.toggle('hidden', v !== 'simple');
+  $('advView').classList.toggle('hidden', v === 'simple');
+  $('vSimple').classList.toggle('on', v === 'simple');
+  $('vAdv').classList.toggle('on', v !== 'simple');
+  store.set('tc_view', v);
+}
+$('vSimple').onclick = () => setView('simple');
+$('vAdv').onclick = () => setView('adv');
+$('riskUsd').value = store.get('tc_risk', '0.40');
+$('riskUsd').addEventListener('input', () => { store.set('tc_risk', $('riskUsd').value); if (lastState) renderSimple(lastState); });
+setView(store.get('tc_view', 'simple'));
+
+const PLAIN = {
+  MAIN: {
+    name: 'Gold 1-hour trend', badge: 'TESTED',
+    how: ['BUY when the 1-hour and 15-minute trends both point UP, the daily trend is not down, and a 5-minute candle closes above the high of the last 15 fifteen-minute candles. SELL is the mirror.',
+          'It skips choppy markets (weak 1-hour or daily trend).',
+          'Stop 1.5 × 1-hour ATR · at TP1 (1R) move the stop to entry · TP2 = 2.35R · close after 24 hours.',
+          'Test 2004-2026: +113R, PF 1.25 · about 3 in 10 trades win; the winners are bigger than the losers.'],
+  },
+  XAUUSD_BO4H: {
+    name: 'Gold 4-hour breakout', badge: 'TESTED',
+    how: ['Uses 4-hour candles. BUY when a 4-hour candle CLOSES above the highest high of the last 20 four-hour candles and the daily trend is UP. SELL when it closes below the lowest low and the daily trend is DOWN.',
+          'Extra checks: not the late-night candle, the move is not already stretched, and the close is near the top (bottom) of the last 24 hours.',
+          'Stop 2 × 4-hour ATR · at +2R move the stop to entry · target 4R · close after 5 days.',
+          'Final test 2022-2026: 118 trades, 42% won, +17.7R, PF 1.30 · about 2 signals a month, so quiet weeks are normal.'],
+  },
+  XAUUSD_BO4H_BIG: {
+    name: 'Gold 4-hour · big target', badge: 'TESTED',
+    how: ['The same 4-hour breakout signals as the card above — only the exit is different.',
+          'Stop 1 × 4-hour ATR (half the normal stop) · at +2R move the stop to entry · take profit 6R · close after 5 days.',
+          'Wins only about 1 trade in 4, but a win can be up to 6R. Expect losing streaks of 10-13 trades.',
+          'Final check 2022-2026: 139 trades, 24% won, +35.4R, PF 1.40, every quarter positive. 2025-2026: +17.5R.'],
+  },
+  XAUUSD_BO4H_3R: {
+    name: 'Gold 4-hour · 3R', badge: 'TESTED',
+    how: ['The same 4-hour breakout signals — only the exit is different.',
+          'Stop 2 × 4-hour ATR · close HALF at +0.75R and move the stop to entry · the other half to 3R · close after 5 days.',
+          'Wins about 2 trades in 3; most wins are small (+0.4R to +1.9R), a loss is -1R.',
+          '2004-2017 66% won, 2017-2022 70% won, final 2022-2026 64% won, +19.5R, PF 1.46, worst drop -6.0R.'],
+  },
+  BTCUSD_BO1H: {
+    name: 'BTC 1-hour breakout', badge: 'TESTED',
+    how: ['Uses 1-hour candles. BUY when an hour CLOSES above the highest high of the last 55 hours and the daily trend is UP. SELL is the mirror.',
+          'Stop 2 × 1-hour ATR · at +2R move the stop to entry · target 4R · close after 30 hours.',
+          'Final test 2025-2026: 130 trades, 38% won, +26.8R, PF 1.39 · about 6 signals a month.'],
+  },
+  XAUUSD_RC2: {
+    name: 'Gold round numbers', badge: 'TESTED',
+    how: ['Watches the $50 price levels (4150, 4200, ...). It trades a 5-minute close across one ONLY when that is also a new 24-hour high (for a BUY) or low (for a SELL) — that is where stop orders pile up and set off a fast move.',
+          'Skips choppy hours and the late night (after 00:00 your time).',
+          'Stop 1.5 × 1-hour ATR · ONE take profit at 0.5R · if neither is hit, it closes after 2 hours.',
+          'Improved and re-tested: 2022-2026 587 trades, 65% won, +47.8R, PF 1.37, every quarter positive (2017-2022: 68% won).'],
+  },
+  USDJPY_BO4H_BIG: {
+    name: 'USD/JPY 4-hour · big target', badge: 'TESTED',
+    how: ['The gold 4-hour breakout rules, copied to USD/JPY without changing anything: BUY when a 4-hour candle CLOSES above the highest high of the last 20 four-hour candles with the daily trend UP (+ the same 3 checks). SELL is the mirror.',
+          'Stop 1 × 4-hour ATR · at +2R move the stop to entry · take profit 6R · close after 5 days.',
+          'Wins only about 1 trade in 4 or 5, but a win can be up to 6R. Expect long losing streaks (worst drop in the test: −25R).',
+          'Tested 2004-2017 +40R, 2017-2022 +53R, final test 2022-2026: 136 trades, 23% won, +28.4R, PF 1.36.'],
+  },
+  NAS100_NOISE: {
+    name: 'NAS100 day trade', badge: 'TESTED',
+    how: ['A day trade on the US tech index (Exness USTEC). Every day it measures how far NAS100 normally moves from the 09:30 New York open by each time of day (average of the last 14 days). That is the "noise" band.',
+          'At 10:00, 10:30 … 15:30 New York: if the price closes ABOVE the band → BUY; BELOW → SELL. Inside the band → no trade.',
+          'Exit at the next half-hour checks when the price falls back inside the band or crosses the day\'s VWAP; everything is closed at 16:00 New York. Never held overnight.',
+          'Tested 2004-2026: 2,182 trading days, 43% of days won, PF 1.26, both halves of the history positive. Money: 1 point = $1 per 1 lot, so $0.10 per point at 0.10 lot (smallest lot 0.05).'],
+  },
+};
+const pts = x => (x === null || x === undefined || isNaN(x)) ? '—' : (x >= 0 ? '+' : '') + Number(x).toFixed(1) + ' pts';
+const usdPts = x => (x === null || x === undefined || isNaN(x)) ? '—' : (x >= 0 ? '+$' : '−$') + Math.abs(x * 0.10).toFixed(2) + ' at 0.10 lot';
+
+function friendlyMain(reason) {
+  const r = String(reason || '');
+  if (/daily market choppy/i.test(r)) return 'The daily market is moving sideways — this strategy sits out choppy days.';
+  if (/efficiency ratio below|chop/i.test(r)) return 'The 1-hour market is choppy — waiting for a clear trend.';
+  if (/No aligned breakout/i.test(r)) return 'The trends are not lined up yet, or there is no breakout of the 15-minute range.';
+  if (/conflict|not aligned/i.test(r)) return 'The 1-hour and 15-minute trends disagree — waiting until they point the same way.';
+  if (/Insufficient data|not enough/i.test(r)) return 'Loading price history…';
+  return r || 'Waiting for the first check…';
+}
+
+function waitText(key, m) {
+  const tf = (m && m.preview && m.preview.timeframes) || {};
+  const trend = tf['daily trend'];
+  const chanKey = Object.keys(tf).find(k => /channel/.test(k));
+  if ((key.includes('BO4H') || key === 'BTCUSD_BO1H') && chanKey) {
+    const parts = String(tf[chanKey]).split(' - '), lo = parts[0], hi = parts[1];
+    const unit = key.includes('BO4H') ? '4-hour' : '1-hour';
+    if (trend === 'UP')   return `Daily trend <b>UP</b>. <b>BUY</b> if a ${unit} candle closes above <b>${hi}</b>.`;
+    if (trend === 'DOWN') return `Daily trend <b>DOWN</b>. <b>SELL</b> if a ${unit} candle closes below <b>${lo}</b>.`;
+    return `No clear daily trend — no trade until it turns up or down (channel ${lo} – ${hi}).`;
+  }
+  if (key === 'XAUUSD_RC2' && tf['round levels']) {
+    const parts = String(tf['round levels']).split(' / ');
+    const up = tf['buy needs above'], dn = tf['sell needs below'];
+    return `<b>BUY</b> if a 5-minute candle closes above <b>${parts[1]}</b>` + (up ? ` and is a new 24-hour high (above <b>${up}</b>)` : '') +
+           ` · <b>SELL</b> if it closes below <b>${parts[0]}</b>` + (dn ? ` and is a new 24-hour low (below <b>${dn}</b>)` : '') + '.';
+  }
+  return (m && m.preview && m.preview.reason) || 'Waiting for the first check…';
+}
+
+function nextText(key, s) {
+  if (key.includes('BO4H')) return 'next check ' + hhmm(nextUtcBoundary(4)) + ' your time (every 4 hours)';
+  if (key === 'BTCUSD_BO1H') return 'next check ' + hhmm(nextUtcBoundary(1)) + ' your time (every hour)';
+  if (key === 'XAUUSD_RC2') return 'checks every 5-minute candle';
+  const D = (s.settings && s.settings.decision_minutes) || 60;
+  return `checks every ${D} min · next in ${nextDecision().txt}`;
+}
+
+function levelsHtml(dir, e, sl, tp1, tp2, d, noTarget, tp1Hit, halfAtTp1) {
+  const R = riskUsd(), risk = Math.abs(e - sl) || 1;
+  const rr = x => Math.abs(x - e) / risk;
+  const cell = (l, p, money, cls) => `<div><div class="l">${l}</div><div class="p ${cls}">${isNaN(p) ? '—' : fx(p, d)}</div><div class="m ${cls}">${money}</div></div>`;
+  return '<div class="clv">' +
+    cell('Entry', e, dir.toUpperCase(), 'grey') +
+    cell(tp1Hit ? 'Stop (at entry)' : 'Stop loss', tp1Hit ? e : sl, tp1Hit ? '$0.00' : '−$' + R.toFixed(2), 'red') +
+    (noTarget ? cell('Target', NaN, 'none', 'blue') : cell(halfAtTp1 ? 'TP1 · close half, stop → entry' : 'TP1 · stop → entry', tp1,
+       '+$' + (R * rr(tp1) * (halfAtTp1 ? 0.5 : 1)).toFixed(2) + (halfAtTp1 ? ' (half)' : ''), 'blue')) +
+    (noTarget ? cell('Closes', NaN, 'after 2 hours', 'green') : cell('TP2', tp2, '+$' + (R * rr(tp2)).toFixed(2), 'green')) +
+    '</div>';
+}
+
+function cardHtml(key, view) {
+  const P = PLAIN[key];
+  const badge = P.badge === 'TESTED' ? 'tested' : 'unproven';
+  const rec = view.rec || {};
+  const tot = rec.total_r_net !== null && rec.total_r_net !== undefined ? rec.total_r_net : rec.total_r;
+  const recTxt = view.recTxt || (rec.closed ? `${rec.closed} trade${rec.closed > 1 ? 's' : ''} · ${rec.win_rate}% won · ${rTxt(tot)} (${usd(tot)})` : 'no closed trades yet');
+  const recent = view.recentTxt !== undefined ? view.recentTxt
+    : (rec.recent || []).map(t => `${t.time} ${String(t.direction).toUpperCase()} ${t.outcome} ${rTxt(t.r_net)}`).join(' · ');
+  const todayTxt = view.todayTxt !== undefined ? view.todayTxt
+    : (rec.today_closed ? 'today ' + rTxt(rec.today_r_net) + ' (' + usd(rec.today_r_net) + ')' : '');
+  return `<div class="card st-${view.st}">
+    <div class="ch"><div class="cn">${P.name}</div><div><span class="cp">${view.price}</span> <span class="badge ${badge}">${P.badge}</span></div></div>
+    <div class="cs ${view.color}">${view.big}</div>
+    <div class="cw">${view.text}</div>
+    <div class="ct">${view.next}</div>
+    ${view.levels || ''}
+    <div class="cf"><span>${recTxt}</span><span>${todayTxt}</span></div>
+    ${recent ? `<div class="rec">last: ${recent}</div>` : ''}
+    <details${openHow[key] ? ' open' : ''} ontoggle="openHow['${key}']=this.open"><summary>How it works</summary><ul>${P.how.map(x => '<li>' + x + '</li>').join('')}</ul></details>
+  </div>`;
+}
+const openHow = {};
+
+function renderSimple(s) {
+  lastState = s;
+  const ms = {}; (s.markets || []).forEach(m => ms[m.key] = m);
+  const views = [];
+  {   // ---- the main gold strategy
+    const op = s.open_position, sig = s.signal;
+    const v = { rec: s.main_record, next: nextText('MAIN', s), price: fx(s.price, 2) };
+    if (!s.running) Object.assign(v, { st: 'off', big: 'STOPPED', color: 'grey', text: 'Press Start to run the strategies.' });
+    else if (op) {
+      const dir = String(op.direction), hit = isTrue(op.tp1_hit);
+      Object.assign(v, { st: 'open' + dir, big: 'IN TRADE · ' + dir.toUpperCase(), color: dir === 'buy' ? 'green' : 'red',
+        text: hit ? 'TP1 reached — the stop is now at entry, this trade can no longer lose.' : 'Trade is running. Use the same stop and targets if you copy it.',
+        levels: levelsHtml(dir, num(op.entry), num(op.sl), num(op.tp1), num(op.tp2), 2, false, hit) });
+    } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: friendlyMain(sig && sig.reason) });
+    views.push(['MAIN', v]);
+  }
+  ['XAUUSD_BO4H', 'XAUUSD_BO4H_BIG', 'XAUUSD_BO4H_3R', 'BTCUSD_BO1H', 'XAUUSD_RC2', 'USDJPY_BO4H_BIG'].forEach(key => {   // ---- the forward-test strategies
+    const m = ms[key];
+    const dg = key.startsWith('USDJPY') ? 3 : 2;
+    const v = { rec: m ? m.record : null, next: nextText(key, s), price: m ? fx(m.price, dg) : '—' };
+    if (!m) Object.assign(v, { st: 'off', big: s.running ? 'STARTING' : 'STOPPED', color: 'grey', text: s.running ? 'Connecting to the market…' : 'Press Start to run the strategies.' });
+    else if (m.error) Object.assign(v, { st: 'off', big: 'NO DATA', color: 'red', text: String(m.error).slice(0, 120) });
+    else if (m.open) {
+      const op = m.open, dir = String(op.direction), hit = isTrue(op.tp1_hit);
+      Object.assign(v, { st: 'open' + dir, big: 'IN TRADE · ' + dir.toUpperCase(), color: dir === 'buy' ? 'green' : 'red',
+        text: (m.no_target || key === 'XAUUSD_RC2') ? (key === 'XAUUSD_RC2' ? 'Closes at the take profit, or by itself 2 hours after entry' : 'Closes by itself 2 hours after entry') + (op.closes_at ? ' (at ' + hhmm(new Date(op.closes_at)) + ').' : '.')
+                          : (hit ? 'TP1 reached — the stop is now at entry, this trade can no longer lose.' : 'Trade is running.'),
+        levels: levelsHtml(dir, op.entry, op.sl, op.tp1, op.tp2, dg, m.no_target, hit, key === 'XAUUSD_BO4H_3R') });
+    } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: waitText(key, m) });
+    views.push([key, v]);
+  });
+  {   // ---- NAS100 day trade: its own engine (half-hour checks, exits at the band / VWAP, out by 16:00 New York)
+    const key = 'NAS100_NOISE', m = ms[key];
+    const rec = (m && m.record) || {};
+    const v = { rec: null, price: m ? fx(m.price, 2) : '—', next: 'checks every 30 min, 10:00-15:30 New York · out by 16:00',
+      recTxt: rec.closed ? `${rec.closed} trade${rec.closed > 1 ? 's' : ''} on ${rec.days} day${rec.days > 1 ? 's' : ''} · ${rec.win_rate}% won · ${pts(rec.points_net)} (${usdPts(rec.points_net)})`
+                         : 'no closed trades yet (forward test from 6 Oct)',
+      todayTxt: rec.today_closed ? 'today ' + pts(rec.today_points_net) + ' (' + usdPts(rec.today_points_net) + ')' : '',
+      recentTxt: (rec.recent || []).map(t => `${t.time} ${String(t.direction).toUpperCase()} ${pts(t.points_net)}`).join(' · ') };
+    const n = (m && m.noise) || {};
+    if (!m) Object.assign(v, { st: 'off', big: s.running ? 'STARTING' : 'STOPPED', color: 'grey', text: s.running ? 'Connecting to the market…' : 'Press Start to run the strategies.' });
+    else if (m.error) Object.assign(v, { st: 'off', big: 'NO DATA', color: 'red', text: String(m.error).slice(0, 120) });
+    else if (!m.noise) Object.assign(v, { st: 'wait', big: 'LOADING', color: 'grey', text: 'Loading NAS100 history…' });
+    else if (!n.ready) Object.assign(v, { st: 'wait', big: 'LEARNING', color: 'violet', text: `Needs 14 days of NAS100 history (has ${n.days_of_history}).` });
+    else if (!n.in_session) Object.assign(v, { st: 'wait', big: 'MARKET CLOSED', color: 'grey',
+      text: 'The New York session opens 09:30 New York' + (n.next_open_utc ? ' = <b>' + hhmm(new Date(n.next_open_utc)) + '</b> your time' : '') + '. The first check is 30 minutes later.',
+      next: 'first check 10:00 New York' + (n.next_open_utc ? ' = ' + hhmm(new Date(new Date(n.next_open_utc).getTime() + 1800000)) + ' your time' : '') });
+    else {
+      const closes = n.closes_utc ? hhmm(new Date(n.closes_utc)) : '16:00 NY';
+      if (n.next_check_utc) v.next = 'next check ' + hhmm(new Date(n.next_check_utc)) + ' your time (every 30 min) · all closed at ' + closes;
+      else v.next = 'no more checks today · all closed at ' + closes + ' your time';
+      if (n.position) {
+        const dir = n.position.direction;
+        Object.assign(v, { st: 'open' + dir, big: 'IN TRADE · ' + dir.toUpperCase(), color: dir === 'buy' ? 'green' : 'red',
+          text: `Entry <b>${fx(n.position.entry, 2)}</b> at ${hhmm(new Date(n.position.opened_utc))}. ` +
+                (n.stop !== null && n.stop !== undefined ? `Closes at the next check if the price is ${dir === 'buy' ? 'below' : 'above'} <b>${fx(n.stop, 2)}</b> (band or VWAP), ` : 'Closes when the price goes back inside the band, ') +
+                `otherwise at ${closes} your time. No fixed stop or target. Now ${pts((num(m.price) - n.position.entry) * (dir === 'buy' ? 1 : -1))}.` });
+      } else if (n.upper !== null && n.upper !== undefined) {
+        Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet',
+          text: `<b>BUY</b> if the ${n.next_check_utc ? hhmm(new Date(n.next_check_utc)) : 'next'} check closes above <b>${fx(n.upper, 2)}</b> · <b>SELL</b> if it closes below <b>${fx(n.lower, 2)}</b>.` });
+      } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: 'No more entries today (the last check is 15:30 New York).' });
+    }
+    views.push([key, v]);
+  }
+  $('cards').innerHTML = views.map(([k, v]) => cardHtml(k, v)).join('');
+
+  const recs = views.filter(([k]) => k !== 'NAS100_NOISE').map(([, v]) => v.rec || {});   // R totals; NAS100 counts in points
+  const net = r => (r.total_r_net !== null && r.total_r_net !== undefined ? r.total_r_net : r.total_r) || 0;
+  const today = recs.reduce((a, r) => a + (r.today_r_net || 0), 0), todayN = recs.reduce((a, r) => a + (r.today_closed || 0), 0);
+  const all = recs.reduce((a, r) => a + net(r), 0), allN = recs.reduce((a, r) => a + (r.closed || 0), 0);
+  const wins = recs.reduce((a, r) => a + (r.closed && r.win_rate !== null && r.win_rate !== undefined ? Math.round(r.closed * r.win_rate / 100) : 0), 0);
+  $('sumToday').textContent = todayN ? usd(today) : '$0.00';
+  $('sumToday').className = 'v num ' + (today > 0 ? 'green' : today < 0 ? 'red' : 'grey');
+  $('sumTodayS').textContent = todayN ? `${todayN} closed today · ${rTxt(today)}` : 'no closed trades today';
+  $('sumAll').textContent = allN ? usd(all) : '$0.00';
+  $('sumAll').className = 'v num ' + (all > 0 ? 'green' : all < 0 ? 'red' : 'grey');
+  $('sumAllS').textContent = allN ? `${allN} trades · ${wins} won · ${rTxt(all)}` : 'no closed trades yet';
+  $('sumOpen').textContent = views.filter(([, v]) => String(v.st).startsWith('open')).length;
+}
+
+async function refresh() {
+  if (!api()) return;
+  try { render(await api().get_state()); }
+  catch (e) { $('acct').textContent = 'bridge error: ' + e; }
+}
+
+/* Preview mode: opened directly in a browser with no Python behind it, so the
+   design can be checked without starting the trader. Clearly labelled, sample data. */
+function previewState() {
+  const eq = [2.35, 1.35, 2.62];      // matches the three sample trades below
+  return {
+    running: true, connected: true, symbol: 'XAUUSDm (preview)', price: 4283.531,
+    last_error: null, seconds_to_next: 42, signal_at: '2026-09-16T04:05:03',
+    account: { login: 476979777, server: 'Exness-MT5Trial9', demo: true },
+    strategy_note: 'indie_trend',
+    signal: { verdict: 'NO TRADE', confidence: 78, reason: 'Multi-timeframe conflict (1H/15M not aligned)',
+              timeframes: { '1H': 'bullish', '15M': 'bearish', '5M': 'bullish', '1D (macro)': 'bullish', '1H trend conviction': '0.31' },
+              plan: null },
+    alerts: [], settings: { poll_seconds: 60, min_alert_confidence: 60, symbol: 'XAUUSDm', strategy: 'indie_trend',
+                            sound_on: true, toast_on: true, autostart: true },
+    stats: { closed: 3, win_rate: 66.7, total_r: 2.62, profit_factor: 3.62, equity: eq },
+    open_position: null,
+    trades: [
+      { time_opened: '2026-09-14T13:00:00', direction: 'buy',  entry: 4251.2, sl: 4228.9, tp2: 4303.6, confidence: 87, status: 'closed', outcome: 'TP2',     r_multiple: 2.35, r_net: 2.31 },
+      { time_opened: '2026-09-15T09:00:00', direction: 'sell', entry: 4290.7, sl: 4312.4, tp2: 4239.7, confidence: 72, status: 'closed', outcome: 'SL',      r_multiple: -1.0, r_net: -1.02 },
+      { time_opened: '2026-09-15T18:00:00', direction: 'buy',  entry: 4268.4, sl: 4244.1, tp2: 4325.5, confidence: 85, status: 'closed', outcome: 'TIMEOUT_AFTER_TP1', r_multiple: 1.27, r_net: 1.21 },
+    ],
+    log: ['[04:01:14] running — checks every 5s; the engine decides once per hour on the closed HH:00 candle',
+          '[04:05:03] NO TRADE — Multi-timeframe conflict (1H/15M not aligned)',
+          '[05:05:02] NO TRADE — 1H not trending with conviction (efficiency ratio 0.21 < 0.25)'].join('\n').split('\n'),
+    journal_path: 'paper_journal.csv',
+    main_record: { closed: 3, win_rate: 66.7, total_r: 2.62, total_r_net: 2.5, today_closed: 1, today_r_net: 1.21,
+                   recent: [{ time: '15 Sep 21:00', direction: 'buy', outcome: 'TIMEOUT_AFTER_TP1', r_net: 1.21 }] },
+    markets: [
+      { key:'BTCUSD_BO1H', name:'BTC/USD 1h breakout', broker:'BTCUSDm', strategy:'1h 55-bar breakout with the daily trend', status:'TEST-PASSED', digits:2,
+        evidence:'Round 4: passed its final test.', decision_minutes:60, max_hold:30, price:85251.21, signal:null, error:null,
+        open:{ direction:'buy', entry:85251.21, sl:84314.21, tp1:87125.21, tp2:88999.21, tp1_hit:false, opened:'2026-09-30T13:00:14' },
+        preview:{ verdict:'NO TRADE', reason:'', timeframes:{ 'last 1h close':'85410.00', '1h channel (55 bars)':'82110.40 - 85240.00', 'daily trend':'UP' }, bar:'13:30' },
+        record:{ closed:1, open:1, win_rate:0, total_r:-1.03, total_r_net:-1.07, today_closed:0, today_r_net:0, recent:[{ time:'30 Sep 16:39', direction:'buy', outcome:'SL', r_net:-1.07 }] } },
+      { key:'XAUUSD_BO4H', name:'XAU/USD 4h breakout', broker:'XAUUSDm', strategy:'4h 20-bar breakout with the daily trend + 3 filters', status:'TEST-PASSED', digits:3,
+        evidence:'Round 4: passed its locked final test (2022-04 to 2026-09): 118 trades, 41.5% won, +17.7R net, PF 1.30.',
+        decision_minutes:240, max_hold:120, price:4283.531, signal:null, open:null, error:null,
+        preview:{ verdict:'NO TRADE', reason:'Gold 4h breakout: waits for the 4h candle to close (next decision 08:00 UTC)',
+                  timeframes:{ 'last 4h close':'4281.20', '4h channel (20 bars)':'4198.40 - 4302.75', 'daily trend':'UP' }, bar:'04:30', decision_candle:false },
+        record:{ closed:0, open:0, win_rate:null, total_r:null, total_r_net:null } },
+      { key:'XAUUSD_RC', name:'XAU/USD round numbers', broker:'XAUUSDm', strategy:'round-number cascade $50, 2h exit', status:'UNPROVEN', digits:3,
+        evidence:'Bank stop-order cascades at $50 levels (Osler). 2004-2026: +128R over 8,253 trades but PF only 1.055.',
+        decision_minutes:5, no_target:true, max_hold:2,
+        price:3747.215, signal:{ verdict:'SELL', reason:null, timeframes:{}, plan:{ entry:3748.905, sl:3767.315, tp1:1907.9, tp2:1907.9 } },
+        preview:{ verdict:'NO TRADE', reason:'no $50 round number crossed on this candle', timeframes:{ 'round levels':'3700 / 3750' }, bar:'09:15', decision_candle:true },
+        open:{ direction:'sell', entry:3748.905, sl:3767.315, tp1:1907.9, tp2:1907.9, tp1_hit:false, opened:'2026-09-22T09:10:04', closes_at:'2026-09-22T11:10:04Z' },
+        record:{ closed:3, open:1, win_rate:66.7, total_r:0.41 }, error:null },
+      { key:'NAS100_NOISE', kind:'noise', name:'NAS100 day trade', broker:'USTECm', strategy:'NOISE intraday momentum', status:'TEST-PASSED', digits:2,
+        evidence:'Tested 2004-2026: 2,182 days, 43% of days won, PF 1.26.', decision_minutes:30, max_hold:6.5, no_target:true,
+        price:31188.40, signal:null, preview:null, open:null, error:null,
+        noise:{ ready:true, in_session:true, position:{ direction:'buy', entry:31124.84, opened_utc:'2026-10-06T14:00:00Z' }, vwap:31102.5,
+                upper:31096.2, lower:30871.9, stop:31102.5, next_check_utc:'2026-10-06T15:00:00Z', closes_utc:'2026-10-06T20:00:00Z', days_of_history:14 },
+        record:{ closed:2, days:2, win_rate:50.0, points_net:43.4, today_closed:0, today_points_net:0, unit:'points',
+                 recent:[{ time:'05 Oct 23:00', direction:'buy', outcome:'16:00 close', points_net:181.3 }, { time:'02 Oct 19:30', direction:'sell', outcome:'back above band/VWAP', points_net:-137.9 }] } },
+      { key:'BTCUSD', name:'BTC/USD', broker:'BTCUSDm', strategy:'squeeze 2R/4R trail', status:'HOLDOUT-PASSED', digits:2,
+        evidence:'Passed a sealed holdout: 177 trades never seen by the search, +60.3R, PF 1.58, +0.34R/trade.',
+        price:80329.95, signal:{ verdict:'BUY', reason:null, timeframes:{}, plan:{ entry:80329.95, sl:79742.10, tp1:80917.80, tp2:81711.39 } },
+        preview:{ verdict:'NO TRADE', reason:'no volatility squeeze — this strategy only trades a break out of a quiet stretch', timeframes:{ volatility:'normal', '12h range':'80087.24 - 81303.19' }, bar:'09:15', decision_candle:false },
+        open:null, record:{ closed:0, open:0, win_rate:null, total_r:null }, error:null },
+      { key:'EURUSD', name:'EUR/USD', broker:'EURUSDm', strategy:'bb_fade', status:'UNPROVEN', digits:5,
+        evidence:'2004-2026 both halves positive (+28.1R, +22.3R) but PF only ~1.05.',
+        price:1.14856, signal:{ verdict:'NO TRADE', reason:'daily market is trending (0.48) — this strategy only fades a choppy market', timeframes:{}, plan:null },
+        preview:{ verdict:'NO TRADE', reason:'daily market is trending (0.48) — this strategy only fades a choppy market', timeframes:{ '1D efficiency':'0.48', band:'1.14671 - 1.14938' }, bar:'09:15', decision_candle:false },
+        open:null, record:{ closed:0, open:0, win_rate:null, total_r:null }, error:null },
+      { key:'GBPUSD', name:'GBP/USD', broker:'GBPUSDm', strategy:'bb_fade', status:'UNPROVEN', digits:5,
+        evidence:'2004-2026 both halves positive (+29.2R, +24.2R), PF ~1.05, moves with EUR/USD.',
+        price:1.33913, signal:{ verdict:'NO TRADE', reason:'price has not come back inside the band', timeframes:{}, plan:null },
+        open:{ direction:'sell', entry:1.34120, sl:1.34310, tp1:1.33930, tp2:1.33674, tp1_hit:true, opened:'2026-09-18T15:00:00' },
+        record:{ closed:2, open:1, win_rate:50.0, total_r:0.35 }, error:null },
+      { key:'USDJPY', name:'USD/JPY', broker:'USDJPYm', strategy:'indie_trend', status:'WEAK', digits:3,
+        evidence:'The gold rules: LOST -9.8R in 2004-2015, made +90.8R in 2015-2026.',
+        price:156.88, signal:{ verdict:'NO TRADE', reason:'1H efficiency ratio below 0.25 (chop)', timeframes:{}, plan:null },
+        open:null, record:{ closed:0, open:0, win_rate:null, total_r:null }, error:null },
+    ],
+  };
+}
+
+window.addEventListener('pywebviewready', () => { ready = true; refresh(); setInterval(refresh, 1000); });
+setTimeout(() => {
+  if (!api()) {                       // no Python bridge -> design preview
+    preview = true;
+    document.querySelector('.pill.paper').textContent = 'PREVIEW · sample data';
+    render(previewState());
+    setInterval(() => { const n = nextDecision(); $('cNext').textContent = n.txt; }, 1000);
+  }
+}, 1200);
+</script>
+</body>
+</html>
