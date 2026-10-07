@@ -289,6 +289,13 @@ def api_performance():
     return _need_login() or jsonify({"rows": engine().performance(), "risk_usd": engine().user.get("risk_usd", 1.0)})
 
 
+@app.get("/health")
+def health():
+    """Which price sources and strategies work (no login: no trades, no account, keys blanked) - so a problem can
+    be found without the password."""
+    return jsonify(engine().health())
+
+
 @app.get("/api/team")
 def api_team():
     return _need_login() or jsonify(engine().team())

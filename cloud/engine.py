@@ -459,6 +459,32 @@ class CloudEngine:
             rows.append(row)
         return rows
 
+    # ------------------------------------------------------------------ public health (no trades, no account)
+    def health(self) -> dict:
+        """Which price sources and strategies work - for /health. Keys in error texts are blanked."""
+        import re
+        now = time.time()
+        if getattr(self, "_health", None) and now - self._health[0] < 20:
+            return self._health[1]
+        clean = lambda s: re.sub(r"(apikey|token|key|password)=[^&\s'\"]+", r"\1=***", str(s))[:220] if s else None
+        feeds = {}
+        f = getattr(self, "factory", None)
+        for sym, fd in list((getattr(f, "feeds", None) or {}).items()):
+            m5 = getattr(fd, "m5", None)
+            n = int(len(m5)) if m5 is not None else 0
+            feeds[sym] = {"source": type(fd).__name__.replace("Feed", ""), "candles": n,
+                          "last_candle_utc": str(m5.index[-1]) if n else None,
+                          "error": clean(getattr(fd, "_last_error", None) or getattr(fd, "last_error", None))}
+        strategies = {"MAIN": {"name": NAMES["MAIN"], "ok": not self.error, "error": clean(self.error)}}
+        for k in self.keys:
+            m = self.markets.get(k)
+            err = getattr(m, "error", None) if m is not None else self.failed.get(k, "not started yet")
+            strategies[k] = {"name": NAMES.get(k, k), "ok": not err, "error": clean(err)}
+        out = {"running": self.running, "checked_utc": datetime.utcnow().isoformat(timespec="seconds"),
+               "feeds": feeds, "strategies": strategies}
+        self._health = (now, out)
+        return out
+
     # ------------------------------------------------------------------ the gold team (round numbers + 4h 3R)
     def _closed_r(self, key) -> pd.DataFrame:
         """Closed paper trades of one strategy measured in R: closing time (UTC) and net R. Never raises."""

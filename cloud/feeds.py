@@ -46,6 +46,7 @@ class _CandleFeed:
         self._last_refresh = 0.0
         self._last_save = 0.0
         self._backfilled = False             # history fetched once: never page back again (it cost API credits)
+        self.last_error = None               # the last fetch error (shown on /health)
         self._quote = (None, None, 0.0)      # bid, ask, monotonic time
         os.makedirs(cache_dir, exist_ok=True)
         if os.path.exists(self.cache_path):
@@ -75,7 +76,12 @@ class _CandleFeed:
             # page back for history only ONCE: if the provider has less than asked, use what it has
             # (asking again on every check emptied the free Twelve Data allowance in a few hours)
             want = 0 if self._backfilled else max(need - len(self.m5), 0)
-            new = self._fetch_closed(since, want)
+            try:
+                new = self._fetch_closed(since, want)
+                self.last_error = None
+            except Exception as e:
+                self.last_error = str(e)[:200]
+                raise
             if want > 0 or since is None:
                 self._backfilled = True
             if len(new):
@@ -363,6 +369,12 @@ class TwelveDataFeed(_CandleFeed):
                 elif "credits" in msg:                       # daily allowance used up: wait for its reset (00:00 UTC)
                     reset = pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(days=1, minutes=2)
                     self._next_fetch = reset.timestamp()
+                    self._last_error = ("Twelve Data free daily limit used up - prices come back by themselves at "
+                                        "00:02 UTC (nothing to do)")
+                    self.last_error = self._last_error
+                    if len(self.m5) and (self._backfilled or len(self.m5) >= need):
+                        return
+                    raise RuntimeError(self._last_error) from e
                 else:
                     self._next_fetch = time.time() + 60      # pause this feed a minute instead of slowing everything
                 if len(self.m5) and (self._backfilled or len(self.m5) >= need):
@@ -417,10 +429,20 @@ class YahooFeed(_CandleFeed):
 
     def _fetch_closed(self, since, need):
         rng = "60d" if since is None or need > 0 else "5d"
-        r = requests.get(self.URL + self.y_symbol, params={"interval": "5m", "range": rng},
-                         headers=YAHOO_HEADERS, timeout=20)
-        r.raise_for_status()
-        res = r.json()["chart"]["result"][0]
+        res, err = None, None
+        for host in ("query1", "query2"):                # query2 = backup when Yahoo refuses the first address
+            try:
+                r = requests.get(self.URL.replace("query1", host) + self.y_symbol, params={"interval": "5m", "range": rng},
+                                 headers=YAHOO_HEADERS, timeout=20)
+                if r.status_code != 200:
+                    err = f"Yahoo answered HTTP {r.status_code} ({host})"
+                    continue
+                res = r.json()["chart"]["result"][0]
+                break
+            except Exception as e:
+                err = f"Yahoo: {type(e).__name__} ({host})"
+        if res is None:
+            raise RuntimeError(err or "Yahoo: no data")
         self._price = res["meta"].get("regularMarketPrice")
         ts = res.get("timestamp") or []
         q = res["indicators"]["quote"][0]
