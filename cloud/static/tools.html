@@ -34,11 +34,28 @@
 <body>
 <header><a href="/">&larr; Dashboard</a><b>TRADECORE</b><a id="exness" class="hidden" href="tradecore://open?pkg=com.exness.android.pa" style="color:var(--blue);font-weight:700">Exness</a></header>
 <nav>
-  <button data-tab="hist" class="on">History</button><button data-tab="perf">Results</button><button data-tab="price">Price alerts</button>
+  <button data-tab="team" class="on">Team</button><button data-tab="hist">History</button><button data-tab="perf">Results</button><button data-tab="price">Price alerts</button>
   <button data-tab="news">News</button><button data-tab="lot">Lot size</button><button data-tab="set">Settings</button>
 </nav>
 <main>
-  <section id="hist">
+  <section id="team">
+    <div class="card"><h2>Gold team: round numbers + 4h 3R</h2>
+      <div class="muted" style="font-size:13px">This month (paper)</div>
+      <div class="big" id="tmMonth">-</div>
+      <span class="tag wait" id="tmVerdict">loading</span>
+      <div class="err hidden" id="tmWarn"></div>
+      <div class="grid" id="tmGrid"></div>
+    </div>
+    <div class="card"><h2>Month by month (live)</h2><div id="tmMonths"><div class="muted">Loading...</div></div></div>
+    <div class="card"><h2>What the test showed</h2><div class="grid" id="tmTest"></div>
+      <div class="muted" style="font-size:12px;margin-top:8px" id="tmNote"></div></div>
+    <div class="card"><h2>Weekly report</h2>
+      <div class="muted" style="font-size:13px">Every Sunday at your daily-summary time you get live results next to the test, in dollars.</div>
+      <button class="btn" id="tmSend">Send me this week's report now</button><div id="tmMsg"></div>
+    </div>
+  </section>
+
+  <section id="hist" class="hidden">
     <div class="card"><h2>Every alert</h2>
       <select id="filter"><option value="">All</option></select>
       <div id="events" style="margin-top:8px"><div class="muted">Loading...</div></div>
@@ -96,11 +113,13 @@
       <label>How long before</label><select id="newsMin"><option value="15">15 minutes</option><option value="30">30 minutes</option>
         <option value="60">1 hour</option><option value="120">2 hours</option></select>
     </div>
-    <div class="card"><h2>Daily summary</h2>
+    <div class="card"><h2>Daily summary and weekly report</h2>
       <div class="sw"><span>Send me a summary every day</span><input id="sumOn" type="checkbox"></div>
+      <div class="sw"><span>Send me a report every Sunday</span><input id="weekOn" type="checkbox"></div>
       <label>At (your time)</label><select id="sumHour"></select>
     </div>
     <button class="btn" id="save">Save</button><div id="saved"></div>
+    <div class="muted" style="font-size:12px;margin-top:14px;text-align:center" id="ver"></div>
   </section>
 </main>
 <script>
@@ -111,16 +130,47 @@ const j = (u, o) => fetch(u, Object.assign({credentials: 'same-origin'}, o || {}
 const post = (u, b, m) => j(u, {method: m || 'POST', headers: {'Content-Type': 'application/json'}, body: b ? JSON.stringify(b) : undefined});
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 let S = null, NAMES = {}, TAB = 'hist';
-const loaders = {hist: loadHistory, perf: loadPerf, price: loadPrices, news: loadNews};
+const loaders = {team: loadTeam, hist: loadHistory, perf: loadPerf, price: loadPrices, news: loadNews};
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
   TAB = b.dataset.tab;
-  ['hist', 'perf', 'price', 'news', 'lot', 'set'].forEach(t => $(t).classList.toggle('hidden', t !== TAB));
+  ['team', 'hist', 'perf', 'price', 'news', 'lot', 'set'].forEach(t => $(t).classList.toggle('hidden', t !== TAB));
   try { localStorage.setItem('tc_tab', TAB); } catch (e) {}
   if (loaders[TAB]) loaders[TAB]().catch(() => {});
 });
 const when = iso => new Date(iso).toLocaleString([], {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'});
 const money = x => (x >= 0 ? '+$' : '-$') + Math.abs(x).toFixed(2);
+
+async function loadTeam() {
+  const t = await j('/api/team'), mo = t.this_month, tot = t.total, tb = t.test;
+  const sign = x => (x >= 0 ? '+' : '') + x.toFixed(2);
+  const cl = x => x > 0 ? 'buy' : x < 0 ? 'sell' : 'muted';
+  $('tmMonth').innerHTML = `<span class="${cl(mo.r)}">${sign(mo.r)}R = ${money(mo.usd)}</span> <span class="muted" style="font-size:14px">${mo.n} trade(s)</span>`;
+  const v = t.verdict, c = /on track/.test(v) ? 'good' : /weaker/.test(v) ? 'mid' : /losing/.test(v) ? 'bad' : 'wait';
+  $('tmVerdict').className = 'tag ' + c; $('tmVerdict').textContent = v;
+  $('tmWarn').classList.toggle('hidden', !t.warning); $('tmWarn').textContent = t.warning;
+  const mem = t.members.map(m => `<div class="k">${esc(m.name)}</div><div>${m.n} trade(s), <span class="${cl(m.r)}">${sign(m.r)}R ${money(m.usd)}</span>`
+    + `${m.open ? ' <span class="muted">(trade open)</span>' : ''}${m.muted ? ' <span class="sell">(alerts OFF)</span>' : ''}</div>`).join('');
+  $('tmGrid').innerHTML = `<div class="k">Last 7 days</div><div>${t.week.n} trade(s), <span class="${cl(t.week.r)}">${sign(t.week.r)}R ${money(t.week.usd)}</span></div>
+    <div class="k">Since the start</div><div>${tot.n} trade(s), <span class="${cl(tot.r)}">${sign(tot.r)}R ${money(tot.usd)}</span></div>
+    <div class="k">Won</div><div>${tot.win == null ? '-' : tot.win + '%'} <span class="muted">(test ${tb.win}%)</span></div>
+    <div class="k">Months in profit</div><div>${t.full_months ? t.green_months + ' of ' + t.full_months : 'first month not finished'} <span class="muted">(test ${tb.months_green}%)</span></div>
+    <div class="k">Biggest drop</div><div>${sign(tot.drop_r)}R ${money(tot.drop_usd)} <span class="muted">(test ${tb.max_dd_r}R)</span></div>` + mem;
+  $('tmMonths').innerHTML = t.months.length ? t.months.map(m => `<div class="pa"><div><b>${esc(m.month)}</b>${m.full ? '' : ' <span class="muted">(so far)</span>'}
+      <div class="muted" style="font-size:12px">${m.n} trade(s)</div></div><div class="${cl(m.r)}" style="font-weight:800">${sign(m.r)}R ${money(m.usd)}</div></div>`).join('')
+    : '<div class="muted">No closed trades yet. Expect about ' + Math.round(tb.per_month) + ' a month.</div>';
+  $('tmTest').innerHTML = `<div class="k">Average month</div><div>${sign(tb.avg_month_r)}R = ${money(tb.avg_month_usd)}</div>
+    <div class="k">Months in profit</div><div>${tb.months_green}%</div>
+    <div class="k">Worst month</div><div>${tb.worst_month_r}R = ${money(tb.worst_month_usd)}</div>
+    <div class="k">Biggest drop</div><div>${tb.max_dd_r}R = ${money(tb.max_dd_usd)}</div>
+    <div class="k">Years in profit</div><div>${esc(tb.years_green)}</div>
+    <div class="k">Trades</div><div>about ${Math.round(tb.per_month)} a month</div>`;
+  $('tmNote').textContent = `Dollars at your risk of $${t.risk_usd.toFixed(2)} a trade (Settings). Test: ${tb.note}.`;
+}
+$('tmSend').onclick = async () => {
+  try { const r = await post('/api/weekly_report'); $('tmMsg').className = 'ok'; $('tmMsg').textContent = r.msg; }
+  catch (e) { $('tmMsg').className = 'err'; $('tmMsg').textContent = String(e); }
+};
 
 async function loadHistory() {
   const h = await j('/api/history'), f = $('filter').value;
@@ -183,8 +233,9 @@ async function loadSettings() {
   $('strats').innerHTML = Object.entries(NAMES).map(([k, n]) =>
     `<div class="sw"><span>${esc(n)}</span><input type="checkbox" data-k="${k}" ${S.muted.includes(k) ? '' : 'checked'}></div>`).join('');
   $('filter').innerHTML = '<option value="">All</option>' + Object.entries(NAMES).map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')
-    + '<option value="price">Price alerts</option><option value="news">News warnings</option><option value="summary">Daily summaries</option>';
-  $('sumOn').checked = S.daily_summary; $('newsOn').checked = S.news_alerts !== false; $('newsMin').value = String(S.news_minutes || 30);
+    + '<option value="price">Price alerts</option><option value="news">News warnings</option><option value="summary">Daily summaries</option>'
+    + '<option value="weekly">Weekly reports</option>';
+  $('sumOn').checked = S.daily_summary; $('weekOn').checked = S.weekly_report !== false; $('newsOn').checked = S.news_alerts !== false; $('newsMin').value = String(S.news_minutes || 30);
   const off = -new Date().getTimezoneOffset() / 60;
   $('sumHour').innerHTML = [...Array(24).keys()].map(h => `<option value="${h}">${String(Math.floor((h + off + 24) % 24)).padStart(2, '0')}:00</option>`).join('');
   $('sumHour').value = S.summary_utc_hour;
@@ -194,7 +245,7 @@ $('save').onclick = async () => {
   const muted = [...document.querySelectorAll('#strats input')].filter(x => !x.checked).map(x => x.dataset.k);
   try {
     const r = await post('/api/user_settings', {risk_usd: parseFloat($('risk').value), account: $('acct').value, muted,
-      daily_summary: $('sumOn').checked, summary_utc_hour: parseInt($('sumHour').value),
+      daily_summary: $('sumOn').checked, weekly_report: $('weekOn').checked, summary_utc_hour: parseInt($('sumHour').value),
       news_alerts: $('newsOn').checked, news_minutes: parseInt($('newsMin').value)});
     $('saved').className = r.ok ? 'ok' : 'err'; $('saved').textContent = r.ok ? 'Saved. Your next alerts use these settings.' : r.msg;
     if (r.ok) { S = r.settings; $('lr').value = S.risk_usd; $('la').value = S.account; calc(); }
@@ -219,8 +270,10 @@ function calc() {
 }
 ['lm', 'le', 'ls', 'lr', 'la'].forEach(id => $(id).addEventListener('input', calc));
 $('filter').onchange = loadHistory;
+fetch('/version').then(r => r.json()).then(v => { $('ver').textContent = 'Server build ' + v.build + (v.commit ? ' (' + v.commit + ')' : ''); }).catch(() => {});
 loadSettings().then(() => {
-  let t = 'hist'; try { t = localStorage.getItem('tc_tab') || 'hist'; } catch (e) {}
+  let t = 'team'; try { t = localStorage.getItem('tc_tab') || 'team'; } catch (e) {}
+  if (location.hash.length > 1) t = location.hash.slice(1);
   const b = document.querySelector(`nav button[data-tab="${t}"]`); (b || document.querySelector('nav button')).click();
 }).catch(e => $('events').textContent = String(e));
 setInterval(() => { if (loaders[TAB]) loaders[TAB]().catch(() => {}); }, 20000);

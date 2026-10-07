@@ -98,6 +98,28 @@ ALERTS_BAR = """
 <a href="/tools" style="margin-left:auto;color:#35d07f;font-weight:700">History &amp; settings</a>
 <a id="tcExness" href="tradecore://open?pkg=com.exness.android.pa" style="display:none;color:#5ab2ff;font-weight:700;margin-left:10px">Exness</a>
 <a href="/logout" style="margin-left:10px">log out</a></div>
+<a id="tcTeam" href="/tools#team" style="display:none;padding:7px 12px;background:#0e1530;border-bottom:1px solid #2a355e;
+ color:#cfd7ea;font:13px system-ui,sans-serif;text-decoration:none"></a>
+<script>
+(function () {
+  const el = document.getElementById('tcTeam');
+  const m = x => (x >= 0 ? '+$' : '-$') + Math.abs(x).toFixed(2);
+  const col = x => x > 0 ? '#35d07f' : x < 0 ? '#ff6b78' : '#9aa6c4';
+  async function team() {
+    try {
+      const t = await (await fetch('/api/team', {credentials: 'same-origin'})).json();
+      if (!t.this_month) return;
+      const mo = t.this_month;
+      el.innerHTML = '<b style="color:#e8ecf5">GOLD TEAM</b> (round numbers + 4h 3R) &middot; this month '
+        + `<b style="color:${col(mo.r)}">${mo.r >= 0 ? '+' : ''}${mo.r.toFixed(2)}R ${m(mo.usd)}</b> from ${mo.n} trade(s)`
+        + ` &middot; test: about ${m(t.test.avg_month_usd)} a month` + (t.warning ? ' &middot; <b style="color:#ff6b78">check it</b>' : '')
+        + ' <span style="color:#35d07f;font-weight:700">&rsaquo; details</span>';
+      el.style.display = 'block';
+    } catch (e) {}
+  }
+  team(); setInterval(team, 60000);
+})();
+</script>
 <script>
 (function () {
   const st = document.getElementById('tcStatus'), btn = document.getElementById('tcAlerts');
@@ -158,6 +180,20 @@ def no_cache(resp):
 def ping():
     engine()
     return "ok"
+
+
+STARTED = time.time()
+
+
+@app.get("/version")
+def version():
+    """Which build is running - so an update can be checked without logging in. No data in it."""
+    try:
+        build = open(os.path.join(HERE, "VERSION"), encoding="utf-8").read().strip()
+    except OSError:
+        build = "local"
+    return jsonify({"build": build, "commit": os.environ.get("RENDER_GIT_COMMIT", "")[:7],
+                    "up_minutes": round((time.time() - STARTED) / 60)})
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -251,6 +287,16 @@ def api_history():
 @app.get("/api/performance")
 def api_performance():
     return _need_login() or jsonify({"rows": engine().performance(), "risk_usd": engine().user.get("risk_usd", 1.0)})
+
+
+@app.get("/api/team")
+def api_team():
+    return _need_login() or jsonify(engine().team())
+
+
+@app.post("/api/weekly_report")
+def api_weekly_report():
+    return _need_login() or jsonify(engine().send_weekly_now())
 
 
 @app.route("/api/price_alerts", methods=["GET", "POST"])

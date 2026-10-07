@@ -35,7 +35,7 @@ POLL_SECONDS = 10
 LOT_SPECS = {"XAUUSD": (100.0, 0.01), "BTCUSD": (1.0, 0.01), "USTEC (NAS100)": (1.0, 0.05), "USDJPY": (None, 0.01)}
 CENT_MARKETS = ("XAUUSD", "USDJPY")       # Exness Cent accounts trade forex + metals, not indices / crypto
 USER_DEFAULTS = {"risk_usd": 1.0, "account": "standard", "muted": [], "daily_summary": True, "summary_utc_hour": 20,
-                 "summary_sent": "", "news_alerts": True, "news_minutes": 30}
+                 "summary_sent": "", "news_alerts": True, "news_minutes": 30, "weekly_report": True, "weekly_sent": ""}
 # What each strategy did in its test (the "unseen" years), to compare with its live record.
 #   win %, profit factor, average R per trade, trades per month, where the numbers come from
 BACKTEST = {
@@ -49,6 +49,12 @@ BACKTEST = {
 }
 MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,355 trades"),
                  60: (30.0, 1.42, 0.19, 4.0, "2015-26, decides every hour, 531 trades")}
+# The steadiest mix an Exness cent account can trade (experiments/scoreboard_cent_teams.py, 2026-10-07). It was chosen
+# AFTER seeing the scoreboard, so it is weaker evidence than a test. What the two did together, 2017-11 -> 2026-09:
+TEAM = ("XAUUSD_RC2", "XAUUSD_BO4H_3R")
+TEAM_BACKTEST = {"months_green": 72.9, "avg_month_r": 1.13, "worst_month_r": -5.4, "max_dd_r": -6.5, "per_month": 9.8,
+                 "per_trade_r": 0.116, "win": 66.3, "pf": 1.49, "years_green": "10 of 10",
+                 "note": "2017-11 -> 2026-09, 1,046 trades; chosen after seeing the results, so weaker than a test"}
 PRICE_MARKETS = {"XAUUSD": ("XAUUSDm", "Gold"), "USDJPY": ("USDJPYm", "USD/JPY"), "BTCUSD": ("BTCUSDm", "BTC"),
                  "NAS100": ("USTECm", "Nasdaq-100 index")}
 NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -172,9 +178,9 @@ class CloudEngine:
         threading.Thread(target=self._side_loop, name="tradecore-alerts", daemon=True).start()
 
     def _side_loop(self):
-        """Price alerts, news warnings and the daily summary every 10 s - never held up by the strategy loop."""
+        """Price alerts, news warnings, the daily summary and the Sunday report every 10 s - never held up by the strategy loop."""
         while True:
-            for job in (self._check_price_alerts, self._check_news, self._maybe_summary):
+            for job in (self._check_price_alerts, self._check_news, self._maybe_summary, self._maybe_weekly):
                 try:
                     job()
                 except Exception as e:
@@ -392,6 +398,8 @@ class CloudEngine:
                 u["news_alerts"] = bool(new["news_alerts"])
             if "news_minutes" in new:
                 u["news_minutes"] = max(5, min(int(new["news_minutes"]), 240))
+            if "weekly_report" in new:
+                u["weekly_report"] = bool(new["weekly_report"])
         except (TypeError, ValueError) as e:
             raise ValueError(f"bad setting: {e}")
         self.user = u
@@ -450,6 +458,124 @@ class CloudEngine:
                                   "weaker than the test" if row["avg"] > 0 else "losing - watch it")
             rows.append(row)
         return rows
+
+    # ------------------------------------------------------------------ the gold team (round numbers + 4h 3R)
+    def _closed_r(self, key) -> pd.DataFrame:
+        """Closed paper trades of one strategy measured in R: closing time (UTC) and net R. Never raises."""
+        path = self.journal_path if key == "MAIN" else os.path.join(self.data_dir, f"forward_{key}.csv")
+        empty = pd.DataFrame({"at": pd.Series(dtype="datetime64[ns, UTC]"), "r": pd.Series(dtype=float)})
+        try:
+            df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
+            if not len(df) or "status" not in df or "time_closed" not in df:
+                return empty
+            df = df[df["status"] == "closed"]
+            r = pd.to_numeric(df["r_net"], errors="coerce") if "r_net" in df else pd.Series(float("nan"), index=df.index)
+            if "r_multiple" in df:
+                r = r.fillna(pd.to_numeric(df["r_multiple"], errors="coerce"))
+            out = pd.DataFrame({"at": pd.to_datetime(df["time_closed"], utc=True, errors="coerce"), "r": r}).dropna()
+            return out.sort_values("at").reset_index(drop=True)
+        except Exception:
+            return empty
+
+    def team(self) -> dict:
+        """The two gold strategies as one team: live paper result by month, next to what they did in the test."""
+        risk = float(self.user.get("risk_usd", 1.0))
+        now = pd.Timestamp.now(tz="UTC")
+        members, frames = [], []
+        for k in TEAM:
+            d = self._closed_r(k)
+            frames.append(d)
+            seen = self._seen.get(k)
+            members.append({"key": k, "name": NAMES.get(k, k), "n": int(len(d)), "r": round(float(d["r"].sum()), 2),
+                            "usd": round(float(d["r"].sum()) * risk, 2), "open": bool(seen and seen[0]),
+                            "muted": k in (self.user.get("muted") or [])})
+        full_frames = [f for f in frames if len(f)]
+        t = pd.concat(full_frames, ignore_index=True).sort_values("at").reset_index(drop=True) if full_frames else frames[0]
+        cur = now.tz_localize(None).to_period("M")
+        months = []
+        if len(t):
+            per = t["at"].dt.tz_localize(None).dt.to_period("M")
+            g = t.groupby(per)["r"].agg(["sum", "count"])
+            for p in pd.period_range(min(per.min(), cur), cur, freq="M"):
+                r_, c_ = (float(g.loc[p, "sum"]), int(g.loc[p, "count"])) if p in g.index else (0.0, 0)
+                months.append({"month": str(p), "r": round(r_, 2), "usd": round(r_ * risk, 2), "n": c_, "full": p != cur})
+        full = [m for m in months if m["full"]]
+        this = months[-1] if months else {"month": str(cur), "r": 0.0, "usd": 0.0, "n": 0, "full": False}
+        wk = t[t["at"] >= now - pd.Timedelta(days=7)]
+        n = int(len(t))
+        avg = float(t["r"].mean()) if n else 0.0
+        eq = t["r"].cumsum()
+        dd = float(min(0.0, (eq - eq.cummax().clip(lower=0)).min())) if n else 0.0
+        tb = TEAM_BACKTEST
+        if n < 20:
+            verdict = f"too early - {n} closed trade(s); about 20 are needed (about 2 months)"
+        elif avg >= 0.5 * tb["per_trade_r"]:
+            verdict = "on track"
+        elif avg > 0:
+            verdict = "weaker than the test"
+        else:
+            verdict = "losing - watch it"
+        warn = ("The drop is already bigger than the worst drop in the test - stop following it and check."
+                if dd < 1.5 * tb["max_dd_r"] else "")
+        return {"members": members, "risk_usd": risk, "verdict": verdict, "warning": warn,
+                "this_month": this, "months": list(reversed(months))[:24],
+                "week": {"n": int(len(wk)), "r": round(float(wk["r"].sum()), 2), "usd": round(float(wk["r"].sum()) * risk, 2)},
+                "total": {"n": n, "r": round(float(t["r"].sum()), 2), "usd": round(float(t["r"].sum()) * risk, 2),
+                          "win": round(100 * float((t["r"] > 0).mean()), 1) if n else None, "avg": round(avg, 3),
+                          "drop_r": round(dd, 2), "drop_usd": round(dd * risk, 2)},
+                "full_months": len(full), "green_months": sum(m["r"] > 0 for m in full),
+                "red_months": sum(m["r"] < 0 for m in full),
+                "test": dict(tb, avg_month_usd=round(tb["avg_month_r"] * risk, 2),
+                             worst_month_usd=round(tb["worst_month_r"] * risk, 2), max_dd_usd=round(tb["max_dd_r"] * risk, 2))}
+
+    # ------------------------------------------------------------------ the Sunday report
+    def weekly_text(self) -> str:
+        risk = float(self.user.get("risk_usd", 1.0))
+        m = lambda x: f"{'+' if x >= 0 else '-'}${abs(x):.2f}"
+        tm = self.team()
+        w, mo, tb = tm["week"], tm["this_month"], tm["test"]
+        now = pd.Timestamp.now(tz="UTC")
+        wk_all = [self._closed_r(k) for k in ["MAIN"] + [k for k in self.keys if k != "NAS100_NOISE"]]
+        wk_all = [d[d["at"] >= now - pd.Timedelta(days=7)] for d in wk_all]
+        n_all, r_all = sum(len(d) for d in wk_all), sum(float(d["r"].sum()) for d in wk_all)
+        lines = [f"Gold team (round numbers + 4h 3R): this week {w['n']} closed, {w['r']:+.2f}R ({m(w['usd'])}); "
+                 f"this month {mo['r']:+.2f}R ({m(mo['usd'])}). Test: about {m(tb['avg_month_usd'])} a month, "
+                 f"{tb['months_green']:.0f}% of months in profit. Verdict: {tm['verdict'].split(' - ')[0]}.",
+                 f"All strategies this week: {n_all} closed, {r_all:+.2f}R ({m(r_all * risk)}) at ${risk:.2f} a trade."]
+        waiting = []
+        for row in self.performance():
+            if not row["n"]:
+                waiting.append(row["name"])
+                continue
+            res = f"{row['total']:+.1f} points" if row["unit"] == "points" else f"{row['total']:+.2f}R ({m(row.get('usd', 0))})"
+            lines.append(f"{row['name']}: {row['n']} trade(s), won {row['win']:.0f}% (test {row['bt_win']:.0f}%), {res} - "
+                         f"{row['verdict'].split(' - ')[0]}")
+        if waiting:
+            lines.append("No closed trades yet: " + ", ".join(waiting) + ".")
+        if tm["warning"]:
+            lines.append("WARNING: " + tm["warning"])
+        lines.append("Paper trading only - no real orders.")
+        return "\n".join(lines)
+
+    def _maybe_weekly(self, force: bool = False):
+        u = self.user
+        now = datetime.utcnow()
+        iso = now.isocalendar()
+        week = f"{iso[0]}-W{iso[1]:02d}"
+        if not force and (not u.get("weekly_report", True) or now.weekday() != 6
+                          or now.hour != int(u.get("summary_utc_hour", 20)) or u.get("weekly_sent") == week):
+            return None
+        body = self.weekly_text()
+        if not force:
+            u["weekly_sent"] = week
+            self.save_user({})
+        return self._alert("TRADECORE weekly report", body, "weekly")
+
+    def send_weekly_now(self) -> dict:
+        app = self.native_app_listening()
+        n = self._maybe_weekly(force=True)
+        return {"ok": True, "msg": "weekly report sent to the TRADECORE app" if app else
+                f"weekly report sent to {n or 0} browser device(s) - it is also in History"}
 
     # ------------------------------------------------------------------ your price alerts
     def _price_alerts_path(self):
