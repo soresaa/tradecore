@@ -44,6 +44,8 @@ class _CandleFeed:
         self.cache_path = os.path.join(cache_dir, f"candles_{symbol}.csv")
         self.m5 = pd.DataFrame(columns=COLS)
         self._last_refresh = 0.0
+        self._last_save = 0.0
+        self._backfilled = False             # history fetched once: never page back again (it cost API credits)
         self._quote = (None, None, 0.0)      # bid, ask, monotonic time
         os.makedirs(cache_dir, exist_ok=True)
         if os.path.exists(self.cache_path):
@@ -66,15 +68,25 @@ class _CandleFeed:
     # ---- shared
     def _refresh(self, need: int = 0, force: bool = False):
         with self.lock:
-            if not force and time.monotonic() - self._last_refresh < self.REFRESH_SECONDS and len(self.m5) >= need:
+            enough = len(self.m5) >= need or self._backfilled
+            if not force and time.monotonic() - self._last_refresh < self.REFRESH_SECONDS and enough:
                 return
             since = self.m5.index[-1] if len(self.m5) else None
-            new = self._fetch_closed(since, max(need - len(self.m5), 0))
+            # page back for history only ONCE: if the provider has less than asked, use what it has
+            # (asking again on every check emptied the free Twelve Data allowance in a few hours)
+            want = 0 if self._backfilled else max(need - len(self.m5), 0)
+            new = self._fetch_closed(since, want)
+            if want > 0 or since is None:
+                self._backfilled = True
             if len(new):
+                old_last = self.m5.index[-1] if len(self.m5) else None
                 df = pd.concat([self.m5, new])
                 df = df[~df.index.duplicated(keep="last")].sort_index()
                 self.m5 = df.iloc[-self.keep:]
-                self.m5.to_csv(self.cache_path)
+                # save to disk only when there is a new candle, and at most every 10 minutes (it is ~5 MB)
+                if old_last is None or (self.m5.index[-1] != old_last and time.monotonic() - self._last_save > 600):
+                    self.m5.to_csv(self.cache_path)
+                    self._last_save = time.monotonic()
             self._last_refresh = time.monotonic()
 
     def now(self) -> pd.Timestamp:
@@ -275,24 +287,29 @@ def gold_api_price() -> float:
 
 class TwelveDataFeed(_CandleFeed):
     """Gold / forex 5-minute candles from Twelve Data's free plan (800 credits a day, 8 a minute): the history once
-    (about 14 calls per symbol, paced), then ONE call per symbol each time a new 5-minute candle has closed
-    (288 a day). The live price between candles comes from a no-account source (`live`)."""
+    (about 14 calls per symbol, paced), then ONE call per symbol every `every` minutes (gold 5 -> 288 a day,
+    USD/JPY 15 -> 96 a day). The live price between candles comes from a no-account source (`live`)."""
     URL = "https://api.twelvedata.com/time_series"
     PAGE = 5000
     PACE = 8.0                      # seconds between calls -> never more than 8 a minute
+    _pace_lock = threading.Lock()   # shared by gold and USD/JPY: the 8-a-minute limit is for the whole key
+    _last_any = 0.0
 
-    def __init__(self, symbol: str, key: str, cache_dir: str, digits: int, live=None):
+    def __init__(self, symbol: str, key: str, cache_dir: str, digits: int, live=None, every: int = 5):
         super().__init__(symbol.replace("/", ""), cache_dir, digits)
         self.td_symbol, self.key = symbol, key
         self.live = _LiveQuote(live) if live else None
+        self.every = every                  # minutes between candle fetches (gold 5; USD/JPY decides on 4h -> 15)
         self._next_fetch = 0.0
         self._last_call = 0.0
+        self._retries = 0
 
     def _call(self, **params) -> pd.DataFrame:
-        wait = self.PACE - (time.monotonic() - self._last_call)
-        if wait > 0:
-            time.sleep(wait)
-        self._last_call = time.monotonic()
+        with TwelveDataFeed._pace_lock:
+            wait = self.PACE - (time.monotonic() - TwelveDataFeed._last_any)
+            if wait > 0:
+                time.sleep(wait)
+            TwelveDataFeed._last_any = self._last_call = time.monotonic()
         r = requests.get(self.URL, params={"symbol": self.td_symbol, "interval": "5min", "timezone": "UTC",
                                            "apikey": self.key, **params}, timeout=30)
         j = r.json()
@@ -331,7 +348,7 @@ class TwelveDataFeed(_CandleFeed):
         # spend credits only when a new candle has closed (or history is missing)
         with self.lock:
             if not force and time.time() < self._next_fetch:
-                if len(self.m5) >= need:
+                if len(self.m5) >= need or self._backfilled:
                     return
                 if getattr(self, "_last_error", None):       # failing: answer at once, do not wait 8 s again
                     raise RuntimeError(self._last_error)
@@ -340,19 +357,30 @@ class TwelveDataFeed(_CandleFeed):
                 self._last_error = None
             except Exception as e:
                 self._last_error = str(e)[:200]
-                self._next_fetch = time.time() + 60          # pause this feed a minute instead of slowing everything
-                if len(self.m5) >= max(need, 1):
+                msg = str(e).lower()
+                if "credits" in msg and "minute" in msg:     # 8-a-minute limit: the next minute is fine
+                    self._next_fetch = time.time() + 65
+                elif "credits" in msg:                       # daily allowance used up: wait for its reset (00:00 UTC)
+                    reset = pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(days=1, minutes=2)
+                    self._next_fetch = reset.timestamp()
+                else:
+                    self._next_fetch = time.time() + 60      # pause this feed a minute instead of slowing everything
+                if len(self.m5) and (self._backfilled or len(self.m5) >= need):
                     return                                   # keep using the candles we already have
                 raise
             now = pd.Timestamp.now(tz="UTC").tz_localize(None)
-            expected = now.floor("5min") - pd.Timedelta(minutes=5)            # the newest candle that has closed
+            step = f"{self.every}min"
+            expected = now.floor(step) - pd.Timedelta(minutes=5)              # the candle that closed at the last step
             last = self.m5.index[-1] if len(self.m5) else None
+            nxt = (now.floor(step) + pd.Timedelta(minutes=self.every, seconds=30)).tz_localize("UTC").timestamp()
             if last is not None and now - last > pd.Timedelta(minutes=30):
                 self._next_fetch = time.time() + 900                          # market closed (weekend): every 15 min
-            elif last is not None and last < expected:
-                self._next_fetch = time.time() + 20                           # candle not published yet: try again soon
+            elif last is not None and last < expected and self._retries < 1:
+                self._retries += 1
+                self._next_fetch = time.time() + 40                           # not published yet: one more try
             else:
-                self._next_fetch = (now.floor("5min") + pd.Timedelta(minutes=5, seconds=15)).tz_localize("UTC").timestamp()
+                self._retries = 0
+                self._next_fetch = nxt
 
     def _fetch_quote(self):
         p = self.live.get() if self.live else None
@@ -424,12 +452,13 @@ class YahooFeed(_CandleFeed):
 
 # PROVIDER=free (default): no OANDA account needed
 FREE_SYMBOLS = {
-    "XAUUSDm": ("twelvedata", "XAU/USD", 2, gold_api_price),
-    "USDJPYm": ("twelvedata", "USD/JPY", 3, lambda: yahoo_price("JPY=X")),
-    "EURUSDm": ("twelvedata", "EUR/USD", 5, lambda: yahoo_price("EURUSD=X")),
-    "GBPUSDm": ("twelvedata", "GBP/USD", 5, lambda: yahoo_price("GBPUSD=X")),
-    "USTECm": ("yahoo", "^NDX", 2, None),
-    "BTCUSDm": ("binance", "BTCUSDT", 2, None),
+    # (source, symbol there, digits, live price between candles, minutes between candle fetches)
+    "XAUUSDm": ("twelvedata", "XAU/USD", 2, gold_api_price, 5),
+    "USDJPYm": ("twelvedata", "USD/JPY", 3, lambda: yahoo_price("JPY=X"), 15),
+    "EURUSDm": ("twelvedata", "EUR/USD", 5, lambda: yahoo_price("EURUSD=X"), 15),
+    "GBPUSDm": ("twelvedata", "GBP/USD", 5, lambda: yahoo_price("GBPUSD=X"), 15),
+    "USTECm": ("yahoo", "^NDX", 2, None, 5),
+    "BTCUSDm": ("binance", "BTCUSDT", 2, None, 5),
 }
 
 
@@ -457,12 +486,12 @@ class FeedFactory:
                     raise RuntimeError("OANDA_TOKEN is empty - add it to the Space secrets")
                 return OandaFeed(sym, tok, self.cfg.get("OANDA_ENV", "practice"), self.cache_dir, digits)
             return BinanceFeed(sym, self.cache_dir, digits)
-        src, sym, digits, live = FREE_SYMBOLS[broker_symbol]
+        src, sym, digits, live, every = FREE_SYMBOLS[broker_symbol]
         if src == "twelvedata":
             key = self.cfg.get("TWELVEDATA_KEY", "")
             if not key:
                 raise RuntimeError("TWELVEDATA_KEY is empty - add your free Twelve Data API key to the Space secrets")
-            return TwelveDataFeed(sym, key, self.cache_dir, digits, live=live)
+            return TwelveDataFeed(sym, key, self.cache_dir, digits, live=live, every=every)
         if src == "yahoo":
             return YahooFeed(sym, self.cache_dir, digits)
         return BinanceFeed(sym, self.cache_dir, digits)
