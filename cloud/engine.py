@@ -37,7 +37,8 @@ POLL_SECONDS = 10
 LOT_SPECS = {"XAUUSD": (100.0, 0.01), "BTCUSD": (1.0, 0.01), "USTEC (NAS100)": (1.0, 0.05), "USDJPY": (None, 0.01)}
 CENT_MARKETS = ("XAUUSD", "USDJPY")       # Exness Cent accounts trade forex + metals, not indices / crypto
 USER_DEFAULTS = {"risk_usd": 1.0, "account": "standard", "muted": [], "daily_summary": True, "summary_utc_hour": 20,
-                 "summary_sent": "", "news_alerts": True, "news_minutes": 30, "weekly_report": True, "weekly_sent": ""}
+                 "summary_sent": "", "news_alerts": True, "news_minutes": 30, "weekly_report": True, "weekly_sent": "",
+                 "sound_on": True, "decision_minutes": 0}          # 0 = the server's MAIN_DECISION_MINUTES
 # What each strategy did in its test (the "unseen" years), to compare with its live record.
 #   win %, profit factor, average R per trade, trades per month, where the numbers come from
 BACKTEST = {
@@ -168,6 +169,8 @@ class CloudEngine:
                 self.user.update(json.load(open(self.user_path, encoding="utf-8")))
             except Exception:
                 pass
+        if int(self.user.get("decision_minutes") or 0) in (5, 15, 60):     # chosen on the dashboard's Settings
+            self.decision_minutes = int(self.user["decision_minutes"])
         if os.path.exists(self.events_path):
             for line in open(self.events_path, encoding="utf-8"):
                 try:
@@ -382,6 +385,38 @@ class CloudEngine:
 
     def native_app_listening(self) -> bool:
         return time.time() - self.native_seen < 180
+
+    # ------------------------------------------------------------------ the dashboard's Settings form (Save)
+    def save_settings(self, new: dict) -> dict:
+        """What the cloud can change from that form: the alarm sound and how often the gold 1-hour trend decides.
+        (Strategy, symbol and check speed are fixed in the cloud; their rows are hidden there.)"""
+        u = dict(self.user)
+        try:
+            if "sound_on" in new:
+                u["sound_on"] = bool(new["sound_on"])
+            if "decision_minutes" in new:
+                dm = int(new["decision_minutes"])
+                if dm not in (5, 15, 60):
+                    raise ValueError("'Decide every' must be 5, 15 or 60 minutes")
+                u["decision_minutes"] = dm
+        except (TypeError, ValueError) as e:
+            return {"ok": False, "msg": str(e)}
+        self.user = u
+        with open(self.user_path, "w", encoding="utf-8") as f:
+            json.dump(u, f)
+        dm = int(u.get("decision_minutes") or 0)
+        if dm in (5, 15, 60) and dm != self.decision_minutes:
+            self.decision_minutes = dm
+            if self.main is not None:
+                self.main.decision_minutes = dm
+        self.log(f"settings saved: alarm sound {'ON' if u.get('sound_on', True) else 'off'}, "
+                 f"gold 1-hour trend decides every {self.decision_minutes} min")
+        return {"ok": True, "msg": "saved"}
+
+    def event_view(self, e: dict) -> dict:
+        """An alert as the phone / page gets it: alarm = ring the alarm sound (new trades, price alerts, the test)."""
+        loud = str(e.get("title", "")).startswith(("BUY", "SELL", "PRICE ALERT", "TRADECORE test"))
+        return dict(e, alarm=bool(self.user.get("sound_on", True)) and loud)
 
     # ------------------------------------------------------------------ your settings, history, daily summary
     def save_user(self, new: dict) -> dict:
@@ -778,7 +813,8 @@ class CloudEngine:
             "account": {"login": "cloud", "server": "TRADECORE cloud", "demo": True},
             "alerts": [], "log": list(self.logs)[-120:],
             "settings": {"decision_minutes": self.decision_minutes, "poll_seconds": POLL_SECONDS,
-                         "strategy": "indie_trend", "symbol": "XAUUSD", "sound_on": False, "toast_on": False,
+                         "strategy": "indie_trend", "symbol": "XAUUSD",
+                         "sound_on": bool(self.user.get("sound_on", True)), "toast_on": True,
                          "autostart": True, "forward_markets": True, "min_alert_confidence": 60},
             "trades": trades, "stats": stats, "open_position": open_pos, "journal_path": self.journal_path,
             "main_record": journal_summary(self.journal_path), "markets": markets,

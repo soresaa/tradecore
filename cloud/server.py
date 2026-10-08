@@ -121,6 +121,49 @@ ALERTS_BAR = """
 })();
 </script>
 <script>
+(function () {   // cloud: the Settings rows that only the desktop app can change are hidden; risk box = server setting
+  const inApp = navigator.userAgent.includes('TradecoreApp');
+  window.addEventListener('load', () => {
+    ['sPoll', 'sConf', 'sStrategy', 'sSymbol', 'sToast', 'sAuto'].forEach(id => {
+      const el = document.getElementById(id), row = el && el.closest('.row'); if (row) row.style.display = 'none'; });
+    const risk = document.getElementById('riskUsd');
+    if (risk) {
+      fetch('/api/user_settings', {credentials: 'same-origin'}).then(r => r.json()).then(j => {
+        if (j.settings && j.settings.risk_usd) { risk.value = j.settings.risk_usd; risk.dispatchEvent(new Event('input')); }
+      }).catch(() => {});
+      risk.addEventListener('change', () => {
+        const v = parseFloat(risk.value);
+        if (v > 0) fetch('/api/user_settings', {method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'}, body: JSON.stringify({risk_usd: v})}).catch(() => {});
+      });
+    }
+  });
+  if (inApp) return;                 // inside the Android app the phone itself rings the alarm
+  let last = null, ctx = null;
+  const unlock = () => { try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); ctx.resume(); } catch (e) {} };
+  ['click', 'touchstart', 'keydown'].forEach(ev => window.addEventListener(ev, unlock, {once: false, passive: true}));
+  function ring() {                  // an alarm: three rising beeps, three times (about 3 seconds)
+    unlock(); if (!ctx) return;
+    for (let k = 0; k < 9; k++) {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + k * 0.33;
+      o.type = 'square'; o.frequency.value = [880, 1175, 1568][k % 3];
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.3);
+    }
+  }
+  async function poll() {
+    try {
+      const q = last === null ? 'init=1' : 'after=' + last;
+      const j = await (await fetch('/api/recent_events?' + q, {credentials: 'same-origin'})).json();
+      if (last !== null && (j.events || []).some(e => e.alarm)) ring();
+      if (typeof j.last === 'number') last = j.last;
+    } catch (e) {}
+  }
+  poll(); setInterval(poll, 15000);
+})();
+</script>
+<script>
 (function () {
   const st = document.getElementById('tcStatus'), btn = document.getElementById('tcAlerts');
   const b64 = s => { const p = '='.repeat((4 - s.length % 4) % 4); const r = atob((s + p).replace(/-/g, '+').replace(/_/g, '/'));
@@ -269,7 +312,22 @@ def api_events():
             break
         time.sleep(1)
     eng.native_seen = time.time()
-    return jsonify({"events": evs, "last": eng.last_event_id()})
+    return jsonify({"events": [eng.event_view(e) for e in evs], "last": eng.last_event_id()})
+
+
+@app.get("/api/recent_events")
+def api_recent_events():
+    """The page's own look at new alerts (for its alarm sound) - unlike /api/events it does not mark the Android app
+    as listening."""
+    if (r := _need_login()):
+        return r
+    eng = engine()
+    try:
+        after = int(request.args.get("after", "-1"))
+    except ValueError:
+        return jsonify({"error": "bad request"}), 400
+    evs = [] if request.args.get("init") == "1" else eng.events_after(after)      # init: only learn the newest number
+    return jsonify({"events": [eng.event_view(e) for e in evs], "last": eng.last_event_id()})
 
 
 @app.get("/tools")
@@ -377,7 +435,7 @@ def api_test():
 
 @app.post("/api/settings")
 def api_settings():
-    return _need_login() or jsonify({"ok": False, "msg": "The cloud app's settings are its Hugging Face secrets/variables."})
+    return _need_login() or jsonify(engine().save_settings(request.get_json(force=True) or {}))
 
 
 @app.get("/api/push/key")

@@ -130,6 +130,30 @@ public class AlertService extends Service {
         nm.notify(id, b.build());
     }
 
+    /** The phone's alarm sound (alarm volume, also when the ringer is silent) for 8 seconds. */
+    private void playAlarm() {
+        new Thread(() -> {
+            try {
+                android.net.Uri u = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM);
+                if (u == null) {
+                    u = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION);
+                }
+                android.media.Ringtone r = android.media.RingtoneManager.getRingtone(getApplicationContext(), u);
+                if (r == null) {
+                    return;
+                }
+                r.setAudioAttributes(new android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build());
+                r.play();
+                Thread.sleep(8000);
+                r.stop();
+            } catch (Exception ignored) {
+            }
+        }, "tradecore-alarm").start();
+    }
+
     private void loop() {
         SharedPreferences prefs = getSharedPreferences("tc", MODE_PRIVATE);
         long last = prefs.getLong("last_event", -1);
@@ -177,12 +201,17 @@ public class AlertService extends Service {
                 JSONObject j = new JSONObject(sb.toString());
                 JSONArray events = j.optJSONArray("events");
                 int shown = 0;
+                boolean ring = false;
                 if (!init && events != null) {
                     for (int k = 0; k < events.length(); k++) {
                         JSONObject e = events.getJSONObject(k);
                         show(100 + (int) (e.optLong("id") % 1000), e.optString("title"), e.optString("body"));
+                        ring = ring || e.optBoolean("alarm", false);
                         shown++;
                     }
+                }
+                if (ring) {
+                    playAlarm();                         // "Alarm sound" is on and this is a trade / price alert
                 }
                 last = j.optLong("last", last);
                 prefs.edit().putLong("last_event", last).apply();
