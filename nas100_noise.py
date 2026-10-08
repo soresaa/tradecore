@@ -26,8 +26,33 @@ def _slot_time(k: int) -> int:
     return 600 + 30 * k                 # candle END time in minutes (10:00 + 30 k)
 
 
-def replay(m5: pd.DataFrame, spread: float = 0.0) -> dict:
+def pro_trend(m5: pd.DataFrame):
+    """The trend check of the user's 'TradeCore AI PRO' indicator, on 5-minute candles of the WHOLE day (as tested in
+    experiments/nas100_combo2_pro.py, variant V8): a BUY is allowed when close > EMA20 > EMA50 > EMA200 and EMA20 and
+    EMA50 are both above their value 3 candles earlier; a SELL is the mirror. Returns (allow_buy, allow_sell)."""
+    c = m5["close"]
+    e20 = c.ewm(span=20, adjust=False).mean().to_numpy()
+    e50 = c.ewm(span=50, adjust=False).mean().to_numpy()
+    e200 = c.ewm(span=200, adjust=False).mean().to_numpy()
+    cl = c.to_numpy(float)
+    back3 = lambda a: np.concatenate([np.full(3, np.nan), a[:-3]])
+    up = (cl > e20) & (e20 > e50) & (e50 > e200) & (e20 > back3(e20)) & (e50 > back3(e50))
+    dn = (cl < e20) & (e20 < e50) & (e50 < e200) & (e20 < back3(e20)) & (e50 < back3(e50))
+    return up, dn
+
+
+def align(target_index: pd.DatetimeIndex, src_index: pd.DatetimeIndex, arr) -> np.ndarray:
+    """arr (one value per src candle) -> one value per target candle: the src candle that started at the same time
+    or the last one before it (False before the first)."""
+    if len(src_index) == 0:
+        return np.zeros(len(target_index), bool)
+    pos = np.searchsorted(src_index.as_unit("ns").asi8, target_index.as_unit("ns").asi8, side="right") - 1
+    return np.where(pos >= 0, np.asarray(arr)[np.clip(pos, 0, len(arr) - 1)], False).astype(bool)
+
+
+def replay(m5: pd.DataFrame, spread: float = 0.0, allow=None) -> dict:
     """m5: 5-minute candles indexed by UTC time (naive), columns open/high/low/close/volume.
+    allow: optional (allow_buy, allow_sell) bool arrays, one per candle - an entry needs it (the research twin).
     Returns {'trades': [...], 'state': {...}} — every closed trade and the state after the last candle."""
     idx = m5.index
     ny = idx.tz_localize("UTC").tz_convert(NY)
@@ -95,9 +120,9 @@ def replay(m5: pd.DataFrame, spread: float = 0.0) -> dict:
                         close(i, px, "back below band/VWAP")
                     elif pos == -1 and px > min(dn, vw):
                         close(i, px, "back above band/VWAP")
-                    if pos == 0 and px > up:
+                    if pos == 0 and px > up and (allow is None or allow[0][i]):
                         pos, entry, entry_i = 1, px, i
-                    elif pos == 0 and px < dn:
+                    elif pos == 0 and px < dn and (allow is None or allow[1][i]):
                         pos, entry, entry_i = -1, px, i
                 today[k] = abs(c[i] / d_open - 1)
             if hm[i] == 955 and pos != 0:
@@ -108,6 +133,8 @@ def replay(m5: pd.DataFrame, spread: float = 0.0) -> dict:
     st = {"ready": False, "position": None, "price": float(c[-1]) if n else None, "vwap": None,
           "in_session": False, "next_check_utc": None, "upper": None, "lower": None, "stop": None,
           "days_of_history": min(len(s) for s in slots) if slots else 0}
+    if allow is not None and n:
+        st["allow"] = {"buy": bool(allow[0][-1]), "sell": bool(allow[1][-1])}
     if n == 0:
         return {"trades": trades, "state": st}
     last_ny = ny[-1] + pd.Timedelta(minutes=5)                    # end of the last closed candle

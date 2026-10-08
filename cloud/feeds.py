@@ -480,6 +480,7 @@ FREE_SYMBOLS = {
     "EURUSDm": ("twelvedata", "EUR/USD", 5, lambda: yahoo_price("EURUSD=X"), 15),
     "GBPUSDm": ("twelvedata", "GBP/USD", 5, lambda: yahoo_price("GBPUSD=X"), 15),
     "USTECm": ("yahoo", "^NDX", 2, None, 5),
+    "NQFUT": ("yahoo", "NQ=F", 2, None, 5),           # Nasdaq futures, 24 hours: the research twin's trend check
     "BTCUSDm": ("binance", "BTCUSDT", 2, None, 5),
 }
 

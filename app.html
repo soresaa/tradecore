@@ -760,6 +760,12 @@ const PLAIN = {
           'Exit at the next half-hour checks when the price falls back inside the band or crosses the day\'s VWAP; everything is closed at 16:00 New York. Never held overnight.',
           'Tested 2004-2026: 2,182 trading days, 43% of days won, PF 1.26, both halves of the history positive. Money: 1 point = $1 per 1 lot, so $0.10 per point at 0.10 lot (smallest lot 0.05).'],
   },
+  NAS100_NOISE_PT: {
+    name: 'NAS100 + TradeCore trend', badge: 'RESEARCH',
+    how: ['The NAS100 day trade with ONE extra check from your TradeCore AI PRO indicator: a BUY is taken only while the 5-minute trend is UP (price above EMA20, EMA20 above EMA50, EMA50 above EMA200, EMA20 and EMA50 rising); a SELL only while it is DOWN. The trend is measured on 24-hour Nasdaq futures candles, as in the test.',
+          'Everything else is the same as the NAS100 day trade card: checks at 10:00 ... 15:30 New York, exits at the band / VWAP, all closed at 16:00.',
+          'Test 2012-2023: better than the plain day trade in both periods (2020-23: PF 1.65 vs 1.49, +52% vs +45% of price) but one fewer green month in 2012-20, so it is NOT proven. This card is a paper side-by-side test from 8 Oct 2026: after 2-3 months compare it with the plain NAS100 card.'],
+  },
 };
 const pts = x => (x === null || x === undefined || isNaN(x)) ? '—' : (x >= 0 ? '+' : '') + Number(x).toFixed(1) + ' pts';
 const usdPts = x => (x === null || x === undefined || isNaN(x)) ? '—' : (x >= 0 ? '+$' : '−$') + Math.abs(x * 0.10).toFixed(2) + ' at 0.10 lot';
@@ -869,12 +875,13 @@ function renderSimple(s) {
     } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: waitText(key, m) });
     views.push([key, v]);
   });
-  {   // ---- NAS100 day trade: its own engine (half-hour checks, exits at the band / VWAP, out by 16:00 New York)
-    const key = 'NAS100_NOISE', m = ms[key];
+  ['NAS100_NOISE', 'NAS100_NOISE_PT'].forEach(key => {   // ---- NAS100 day trade (+ its research twin with the TradeCore trend check)
+    const m = ms[key];
+    if (!m && key !== 'NAS100_NOISE') return;
     const rec = (m && m.record) || {};
     const v = { rec: null, price: m ? fx(m.price, 2) : '—', next: 'checks every 30 min, 10:00-15:30 New York · out by 16:00',
       recTxt: rec.closed ? `${rec.closed} trade${rec.closed > 1 ? 's' : ''} on ${rec.days} day${rec.days > 1 ? 's' : ''} · ${rec.win_rate}% won · ${pts(rec.points_net)} (${usdPts(rec.points_net)})`
-                         : 'no closed trades yet (forward test from 6 Oct)',
+                         : 'no closed trades yet (forward test from ' + (key === 'NAS100_NOISE' ? '6' : '8') + ' Oct)',
       todayTxt: rec.today_closed ? 'today ' + pts(rec.today_points_net) + ' (' + usdPts(rec.today_points_net) + ')' : '',
       recentTxt: (rec.recent || []).map(t => `${t.time} ${String(t.direction).toUpperCase()} ${pts(t.points_net)}`).join(' · ') };
     const n = (m && m.noise) || {};
@@ -897,14 +904,15 @@ function renderSimple(s) {
                 `otherwise at ${closes} your time. No fixed stop or target. Now ${pts((num(m.price) - n.position.entry) * (dir === 'buy' ? 1 : -1))}.` });
       } else if (n.upper !== null && n.upper !== undefined) {
         Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet',
-          text: `<b>BUY</b> if the ${n.next_check_utc ? hhmm(new Date(n.next_check_utc)) : 'next'} check closes above <b>${fx(n.upper, 2)}</b> · <b>SELL</b> if it closes below <b>${fx(n.lower, 2)}</b>.` });
+          text: `<b>BUY</b> if the ${n.next_check_utc ? hhmm(new Date(n.next_check_utc)) : 'next'} check closes above <b>${fx(n.upper, 2)}</b> · <b>SELL</b> if it closes below <b>${fx(n.lower, 2)}</b>.` +
+                (n.allow ? ' TradeCore trend now: ' + (n.allow.buy ? '<b>UP</b> (only a BUY can be taken).' : n.allow.sell ? '<b>DOWN</b> (only a SELL can be taken).' : '<b>none</b> (no trade can be taken).') : '') });
       } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: 'No more entries today (the last check is 15:30 New York).' });
     }
     views.push([key, v]);
-  }
+  });
   $('cards').innerHTML = views.map(([k, v]) => cardHtml(k, v)).join('');
 
-  const recs = views.filter(([k]) => k !== 'NAS100_NOISE').map(([, v]) => v.rec || {});   // R totals; NAS100 counts in points
+  const recs = views.filter(([k]) => !k.startsWith('NAS100_NOISE')).map(([, v]) => v.rec || {});   // R totals; NAS100 counts in points
   const net = r => (r.total_r_net !== null && r.total_r_net !== undefined ? r.total_r_net : r.total_r) || 0;
   const today = recs.reduce((a, r) => a + (r.today_r_net || 0), 0), todayN = recs.reduce((a, r) => a + (r.today_closed || 0), 0);
   const all = recs.reduce((a, r) => a + net(r), 0), allN = recs.reduce((a, r) => a + (r.closed || 0), 0);

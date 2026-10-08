@@ -280,6 +280,11 @@ class NoiseMarket:
             except Exception:
                 pass
         self.spread = cost_model_for(info.get("cost_key", key)).spread_price
+        self.filter = info.get("filter")             # "pro_trend" = the research twin
+        self.filter_feed = None                      # 24-hour candles for the filter (None: this market's own candles)
+        if self.filter and feed_factory is not None and info.get("filter_broker"):
+            self.filter_feed = feed_factory(info["filter_broker"])
+        self._lag_since = None
         log(f"forward market ready: {info['name']} ({info['broker']}) — half-hour checks 10:00-15:30 New York, "
             f"out by 16:00, paper only")
 
@@ -304,7 +309,23 @@ class NoiseMarket:
                 offset_h = round((m5.index[-1] - utc_now).total_seconds() / 3600)   # broker server time -> UTC
                 if offset_h > 0:
                     m5.index = m5.index - pd.Timedelta(hours=offset_h)
-                res = self._nn.replay(m5, spread=self.spread)
+                allow = None
+                if self.filter == "pro_trend":
+                    src = m5
+                    if self.filter_feed is not None:
+                        src = self.filter_feed.get_recent_5m(3000)
+                        src = src[(src.index.second == 0) & (src.index.minute % 5 == 0)]
+                        # wait (up to 90 s) until the 24-hour candles have this candle too: a decision on an old trend
+                        # value could change once they arrive
+                        if len(src) and src.index[-1] < m5.index[-1]:
+                            now = time.time()
+                            self._lag_since = self._lag_since or now
+                            if now - self._lag_since < 90:
+                                return
+                        self._lag_since = None
+                    b, s_ = self._nn.pro_trend(src)
+                    allow = (self._nn.align(m5.index, src.index, b), self._nn.align(m5.index, src.index, s_))
+                res = self._nn.replay(m5, spread=self.spread, allow=allow)
                 self._append_closed(res["trades"])
                 self.state = res["state"]
                 self._bar = bar_t
@@ -343,7 +364,7 @@ class NoiseMarket:
                 "strategy": self.info["strategy"], "status": self.info["status"],
                 "evidence": self.info["evidence"], "digits": self.digits,
                 "decision_minutes": 30, "max_hold": self.info["max_hold"], "no_target": True,
-                "price": self.price, "signal": None, "preview": None, "noise": self.state,
+                "price": self.price, "signal": None, "preview": None, "noise": self.state, "filter": self.filter,
                 "open": None, "record": self.record(), "error": self.error}
 
 

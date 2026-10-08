@@ -27,9 +27,11 @@ from cloud.persist import Persist      # noqa: E402
 
 NAMES = {"MAIN": "Gold 1-hour trend", "XAUUSD_BO4H": "Gold 4-hour breakout", "XAUUSD_BO4H_BIG": "Gold 4-hour big target",
          "XAUUSD_BO4H_3R": "Gold 4-hour 3R", "XAUUSD_RC2": "Gold round numbers", "BTCUSD_BO1H": "BTC 1-hour breakout",
-         "NAS100_NOISE": "NAS100 day trade", "USDJPY_BO4H_BIG": "USD/JPY 4-hour big target"}
+         "NAS100_NOISE": "NAS100 day trade", "USDJPY_BO4H_BIG": "USD/JPY 4-hour big target",
+         "NAS100_NOISE_PT": "NAS100 + TradeCore trend (research)"}
 SYMBOL = {"MAIN": "XAUUSD", "XAUUSD_BO4H": "XAUUSD", "XAUUSD_BO4H_BIG": "XAUUSD", "XAUUSD_BO4H_3R": "XAUUSD",
-          "XAUUSD_RC2": "XAUUSD", "BTCUSD_BO1H": "BTCUSD", "NAS100_NOISE": "USTEC (NAS100)", "USDJPY_BO4H_BIG": "USDJPY"}
+          "XAUUSD_RC2": "XAUUSD", "BTCUSD_BO1H": "BTCUSD", "NAS100_NOISE": "USTEC (NAS100)", "USDJPY_BO4H_BIG": "USDJPY",
+          "NAS100_NOISE_PT": "USTEC (NAS100)"}
 POLL_SECONDS = 10
 # Exness Standard contract specs: (USD per 1.0 price move per 1 lot, smallest lot). USD/JPY's depends on the price.
 LOT_SPECS = {"XAUUSD": (100.0, 0.01), "BTCUSD": (1.0, 0.01), "USTEC (NAS100)": (1.0, 0.05), "USDJPY": (None, 0.01)}
@@ -46,6 +48,7 @@ BACKTEST = {
     "BTCUSD_BO1H": (37.7, 1.39, 0.21, 6.4, "final test 2025-26, 130 trades"),
     "NAS100_NOISE": (40.2, 1.26, None, 35.0, "2004-26, 2,182 days (results in points)"),
     "USDJPY_BO4H_BIG": (22.8, 1.36, 0.21, 2.6, "final test 2022-26, 136 trades"),
+    "NAS100_NOISE_PT": (49.5, 1.65, None, 33.0, "research 2020-23, 422 days (results in points; NOT proven)"),
 }
 MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,355 trades"),
                  60: (30.0, 1.42, 0.19, 4.0, "2015-26, decides every hour, 531 trades")}
@@ -324,7 +327,7 @@ class CloudEngine:
                 continue
             name, sym = NAMES.get(key, key), SYMBOL.get(key, "")
             if n_closed > prev[2] and last:
-                if key == "NAS100_NOISE":
+                if key.startswith("NAS100_NOISE"):
                     res = f"{float(last.get('points_net') or 0):+.1f} points"
                 else:
                     r = last.get("r_net") if last.get("r_net") is not None else last.get("r_multiple")
@@ -339,7 +342,7 @@ class CloudEngine:
                         return self._fmt(key, abs(float(level) - float(op.get("entry"))))
                     except Exception:
                         return "?"
-                if key == "NAS100_NOISE":
+                if key.startswith("NAS100_NOISE"):
                     body = (f"Nasdaq-100 index {f(op.get('entry'))} | SL line {f(op.get('sl'))} = {dist(op.get('sl'))} "
                             f"points away (exit if a :00/:30 candle closes beyond it) | no TP, closes 16:00 New York. "
                             f"On Exness USTEC use the same distance in points.")
@@ -424,13 +427,13 @@ class CloudEngine:
                 continue
             path = self.journal_path if key == "MAIN" else os.path.join(self.data_dir, f"forward_{key}.csv")
             row = {"key": key, "name": NAMES.get(key, key), "bt_win": bt[0], "bt_pf": bt[1], "bt_r": bt[2],
-                   "bt_per_month": bt[3], "bt_note": bt[4], "n": 0, "unit": "points" if key == "NAS100_NOISE" else "R"}
+                   "bt_per_month": bt[3], "bt_note": bt[4], "n": 0, "unit": "points" if key.startswith("NAS100_NOISE") else "R"}
             try:
                 df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
             except Exception:
                 df = pd.DataFrame()
             if len(df):
-                if key == "NAS100_NOISE":
+                if key.startswith("NAS100_NOISE"):
                     r = pd.to_numeric(df["points_net"], errors="coerce").dropna()
                     first = df["entry_time"].iloc[0] if "entry_time" in df else None
                 else:
@@ -445,12 +448,12 @@ class CloudEngine:
                     row.update(n=int(len(r)), win=round(100 * float((r > 0).mean()), 1), total=round(float(r.sum()), 2),
                                avg=round(float(r.mean()), 3), pf=round(float(w / l), 2) if l > 0 else None,
                                since=str(first)[:10] if first is not None else "")
-                    if key != "NAS100_NOISE":
+                    if not key.startswith("NAS100_NOISE"):
                         row["usd"] = round(float(r.sum()) * risk, 2)
             n = row["n"]
             if n < 20:
                 row["verdict"] = f"too early - {n} closed trade(s); about 30 are needed to judge"
-            elif key == "NAS100_NOISE":
+            elif key.startswith("NAS100_NOISE"):
                 row["verdict"] = ("on track" if (row.get("pf") or 0) >= 1.1 else
                                   "weaker than the test" if row.get("total", 0) > 0 else "losing - watch it")
             else:
@@ -561,7 +564,7 @@ class CloudEngine:
         tm = self.team()
         w, mo, tb = tm["week"], tm["this_month"], tm["test"]
         now = pd.Timestamp.now(tz="UTC")
-        wk_all = [self._closed_r(k) for k in ["MAIN"] + [k for k in self.keys if k != "NAS100_NOISE"]]
+        wk_all = [self._closed_r(k) for k in ["MAIN"] + [k for k in self.keys if not k.startswith("NAS100_NOISE")]]
         wk_all = [d[d["at"] >= now - pd.Timedelta(days=7)] for d in wk_all]
         n_all, r_all = sum(len(d) for d in wk_all), sum(float(d["r"].sum()) for d in wk_all)
         lines = [f"Gold team (round numbers + 4h 3R): this week {w['n']} closed, {w['r']:+.2f}R ({m(w['usd'])}); "

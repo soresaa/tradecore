@@ -361,10 +361,23 @@ PLAYBOOK = {
                                  "the Exness spread): 2,182 days, 43% of days won, +107.7% of price, PF 1.26, both halves "
                                  "positive. App engine = backtest on 2,181/2,181 days. Paper forward test.",
                      },
+    # Research twin (2026-10-08, user's choice): NOISE + the trend check of the user's "TradeCore AI PRO" indicator,
+    # measured on 24-hour candles (cloud: Nasdaq futures NQ=F from Yahoo; desktop: USTECm itself, which trades ~23h).
+    # experiments/nas100_combo2_pro.py V8: dev PF 1.25 / +52.8% (NOISE 1.20 / +47.9%), val PF 1.649 / +52.1% (1.487 /
+    # +45.3%), but one green month fewer in dev -> NOT promoted, test not opened. Watched side by side, paper only.
+    "NAS100_NOISE_PT": {"broker": "USTECm", "cost_key": "NAS100", "name": "NAS100 + TradeCore trend",
+                        "strategy": "NOISE day trade, entries only with the TradeCore AI PRO trend (EMA 20 > 50 > 200, rising)",
+                        "fn": None, "kind": "noise", "status": "RESEARCH", "filter": "pro_trend", "filter_broker": "NQFUT",
+                        "decision_minutes": 30, "max_hold": 6.5, "lookback": 9000, "forward_start": "2026-10-08",
+                        "evidence": "Research: NOISE + TradeCore trend, 2012-2023 better than NOISE alone in PF and profit in "
+                                    "both periods (2020-23 PF 1.65 vs 1.49) but one fewer green month in 2012-20, so NOT "
+                                    "proven. Paper side-by-side test from 2026-10-08.",
+                        },
 }
 
 # never the live gold slot; XAUUSD_RC is a separate paper journal
 FORWARD_MARKETS = ("XAUUSD_BO4H", "XAUUSD_BO4H_BIG", "XAUUSD_BO4H_3R", "BTCUSD_BO1H", "XAUUSD_RC2", "NAS100_NOISE",
+                   "NAS100_NOISE_PT",
                    "USDJPY_BO4H_BIG", "EURUSD_BBH", "BTCUSD", "GBPUSD")
 
 
