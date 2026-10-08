@@ -45,7 +45,8 @@ class _CandleFeed:
         self.m5 = pd.DataFrame(columns=COLS)
         self._last_refresh = 0.0
         self._last_save = 0.0
-        self._backfilled = False             # history fetched once: never page back again (it cost API credits)
+        self._tried = 0                      # the most candles history was already paged back for: never page again
+                                             # for that much (if the provider has less, asking again cost API credits)
         self.last_error = None               # the last fetch error (shown on /health)
         self._quote = (None, None, 0.0)      # bid, ask, monotonic time
         os.makedirs(cache_dir, exist_ok=True)
@@ -69,21 +70,22 @@ class _CandleFeed:
     # ---- shared
     def _refresh(self, need: int = 0, force: bool = False):
         with self.lock:
-            enough = len(self.m5) >= need or self._backfilled
+            enough = len(self.m5) >= need or need <= self._tried
             if not force and time.monotonic() - self._last_refresh < self.REFRESH_SECONDS and enough:
                 return
             since = self.m5.index[-1] if len(self.m5) else None
-            # page back for history only ONCE: if the provider has less than asked, use what it has
-            # (asking again on every check emptied the free Twelve Data allowance in a few hours)
-            want = 0 if self._backfilled else max(need - len(self.m5), 0)
+            # page back for history only ONCE per size asked: if the provider has less than asked, use what it has
+            # (asking again on every check emptied the free Twelve Data allowance in a few hours). A first call that
+            # asks for no history (a live price) must not stop the strategies' larger request later.
+            want = max(need - len(self.m5), 0) if need > self._tried else 0
             try:
                 new = self._fetch_closed(since, want)
                 self.last_error = None
             except Exception as e:
                 self.last_error = str(e)[:200]
                 raise
-            if want > 0 or since is None:
-                self._backfilled = True
+            if want > 0:
+                self._tried = max(self._tried, need)
             if len(new):
                 old_last = self.m5.index[-1] if len(self.m5) else None
                 df = pd.concat([self.m5, new])
@@ -225,7 +227,7 @@ class BinanceFeed(_CandleFeed):
     def _fetch_closed(self, since, need):
         frames = []
         if since is None or need > 0:
-            end, got = None, 0
+            end, got = (self.m5.index[0] if len(self.m5) and need > 0 else None), 0   # older than what we have
             while got < max(need, 1):
                 kw = {"limit": self.PAGE}
                 if end is not None:
@@ -332,7 +334,7 @@ class TwelveDataFeed(_CandleFeed):
     def _fetch_closed(self, since, need):
         frames = []
         if since is None or need > 0:
-            end, got = None, 0
+            end, got = (self.m5.index[0] if len(self.m5) and need > 0 else None), 0   # older than what we have
             while got < max(need, 1):
                 kw = {"outputsize": self.PAGE}
                 if end is not None:
@@ -354,7 +356,7 @@ class TwelveDataFeed(_CandleFeed):
         # spend credits only when a new candle has closed (or history is missing)
         with self.lock:
             if not force and time.time() < self._next_fetch:
-                if len(self.m5) >= need or self._backfilled:
+                if len(self.m5) >= need or need <= self._tried:
                     return
                 if getattr(self, "_last_error", None):       # failing: answer at once, do not wait 8 s again
                     raise RuntimeError(self._last_error)
@@ -372,12 +374,12 @@ class TwelveDataFeed(_CandleFeed):
                     self._last_error = ("Twelve Data free daily limit used up - prices come back by themselves at "
                                         "00:02 UTC (nothing to do)")
                     self.last_error = self._last_error
-                    if len(self.m5) and (self._backfilled or len(self.m5) >= need):
+                    if len(self.m5) and (need <= self._tried or len(self.m5) >= need):
                         return
                     raise RuntimeError(self._last_error) from e
                 else:
                     self._next_fetch = time.time() + 60      # pause this feed a minute instead of slowing everything
-                if len(self.m5) and (self._backfilled or len(self.m5) >= need):
+                if len(self.m5) and (need <= self._tried or len(self.m5) >= need):
                     return                                   # keep using the candles we already have
                 raise
             now = pd.Timestamp.now(tz="UTC").tz_localize(None)
