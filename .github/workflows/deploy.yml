@@ -1,0 +1,20 @@
+name: Deploy the server to Render
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the Render deploy hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then echo "The RENDER_DEPLOY_HOOK secret is not set yet - nothing to do."; exit 0; fi
+          curl -fsS -X POST "$HOOK" -o /dev/null && echo "Render deploy started."
