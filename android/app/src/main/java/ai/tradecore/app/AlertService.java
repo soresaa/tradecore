@@ -49,10 +49,29 @@ public class AlertService extends Service {
         return null;
     }
 
+    private android.os.PowerManager.WakeLock wake;
+    private android.net.wifi.WifiManager.WifiLock wifi;
+
     @Override
     public void onCreate() {
         super.onCreate();
         makeChannels();
+        // Without these the phone pauses the live line when the screen goes off, and an alert only arrives when the
+        // app is opened again. The processor is kept awake only enough to wait for the server's answer.
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            wake = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "tradecore:alerts");
+            wake.setReferenceCounted(false);
+            wake.acquire();
+        } catch (Exception ignored) {
+        }
+        try {
+            android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            wifi = wm.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "tradecore:alerts");
+            wifi.setReferenceCounted(false);
+            wifi.acquire();
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
@@ -79,6 +98,15 @@ public class AlertService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        try {
+            if (wake != null && wake.isHeld()) {
+                wake.release();
+            }
+            if (wifi != null && wifi.isHeld()) {
+                wifi.release();
+            }
+        } catch (Exception ignored) {
+        }
         super.onDestroy();
     }
 
