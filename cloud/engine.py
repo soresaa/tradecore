@@ -51,6 +51,11 @@ BACKTEST = {
     "USDJPY_BO4H_BIG": (22.8, 1.36, 0.21, 2.6, "final test 2022-26, 136 trades"),
     "NAS100_NOISE_PT": (49.5, 1.65, None, 33.0, "research 2020-23, 422 days (results in points; NOT proven)"),
 }
+# The worst losing stretch each strategy had in its tests (R; NAS100 in points at today's price), for the safety brake
+# (PAUSE when a live stretch is 1.5x deeper). 2018-26 where the team study measured it, else the full history.
+TEST_DROP = {"XAUUSD_RC2": 6.3, "XAUUSD_BO4H_BIG": 10.8, "XAUUSD_BO4H_3R": 6.6, "XAUUSD_BO4H": 15.0,
+             "USDJPY_BO4H_BIG": 25.0, "BTCUSD_BO1H": 13.7, "NAS100_NOISE": 3100.0, "NAS100_NOISE_PT": 3100.0}
+TEST_DROP_MAIN = {60: 13.2, 15: 25.2, 5: 36.0}        # gold 1-hour trend, by "decide every" (2015-26 test)
 MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,355 trades"),
                  60: (30.0, 1.42, 0.19, 4.0, "2015-26, decides every hour, 531 trades")}
 # The steadiest mix an Exness cent account can trade (experiments/scoreboard_cent_teams.py, 2026-10-07). It was chosen
@@ -186,7 +191,8 @@ class CloudEngine:
     def _side_loop(self):
         """Price alerts, news warnings, the daily summary and the Sunday report every 10 s - never held up by the strategy loop."""
         while True:
-            for job in (self._check_price_alerts, self._check_news, self._maybe_summary, self._maybe_weekly):
+            for job in (self._check_price_alerts, self._check_news, self._maybe_summary, self._maybe_weekly,
+                        self._check_drops):
                 try:
                     job()
                 except Exception as e:
@@ -485,6 +491,10 @@ class CloudEngine:
                                since=str(first)[:10] if first is not None else "")
                     if not key.startswith("NAS100_NOISE"):
                         row["usd"] = round(float(r.sum()) * risk, 2)
+                    eq = r.cumsum()
+                    peak = eq.cummax().clip(lower=0)
+                    row["drop"] = round(float(min(0.0, eq.iloc[-1] - peak.iloc[-1])), 2)       # the stretch it is in NOW
+                    row["worst_drop"] = round(float(min(0.0, (eq - peak).min())), 2)
             n = row["n"]
             if n < 20:
                 row["verdict"] = f"too early - {n} closed trade(s); about 30 are needed to judge"
@@ -494,8 +504,35 @@ class CloudEngine:
             else:
                 row["verdict"] = ("on track" if row["avg"] >= 0.5 * bt[2] else
                                   "weaker than the test" if row["avg"] > 0 else "losing - watch it")
+            # the safety brake: a live losing stretch 1.5x deeper than the worst one in the test -> pause and check
+            td = TEST_DROP_MAIN.get(self.decision_minutes) if key == "MAIN" else TEST_DROP.get(key)
+            if td:
+                row["test_drop"] = -td
+                if row.get("drop", 0) < -1.5 * td:
+                    u = " points" if row["unit"] == "points" else "R"
+                    row["verdict"] = (f"PAUSE - its losing stretch ({row['drop']:+.1f}{u}) is deeper than 1.5x the worst in "
+                                      f"its test ({-td:+.1f}{u}); stop following it and check")
             rows.append(row)
         return rows
+
+    def _check_drops(self):
+        """Once an hour: a phone warning when a strategy first hits the safety brake (PAUSE), once per episode."""
+        now = time.time()
+        if now - getattr(self, "_drop_checked", 0) < 3600:
+            return
+        self._drop_checked = now
+        warned = list(self.user.get("drop_warned") or [])
+        changed = False
+        for row in self.performance():
+            paused = str(row.get("verdict", "")).startswith("PAUSE")
+            if paused and row["key"] not in warned:
+                self._alert(f"PAUSE CHECK: {row['name']}", row["verdict"].split(" - ", 1)[1], row["key"])
+                warned.append(row["key"]); changed = True
+            elif not paused and row["key"] in warned:
+                warned.remove(row["key"]); changed = True
+        if changed:
+            self.user["drop_warned"] = warned
+            self.save_user({})
 
     # ------------------------------------------------------------------ public health (no trades, no account)
     def health(self) -> dict:

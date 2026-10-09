@@ -185,11 +185,12 @@ async function loadPerf() {
   const p = await j('/api/performance');
   $('perfRows').innerHTML = p.rows.map(r => {
     const pts = r.unit === 'points';
-    const cls = /on track/.test(r.verdict) ? 'good' : /weaker/.test(r.verdict) ? 'mid' : /losing/.test(r.verdict) ? 'bad' : 'wait';
+    const cls = /^PAUSE/.test(r.verdict) ? 'bad' : /on track/.test(r.verdict) ? 'good' : /weaker/.test(r.verdict) ? 'mid' : /losing/.test(r.verdict) ? 'bad' : 'wait';
     const live = r.n ? `<div class="k">Closed trades</div><div>${r.n}${r.since ? ' (since ' + esc(r.since) + ')' : ''}</div>
        <div class="k">Won</div><div>${r.win}% <span class="muted">(test ${r.bt_win}%)</span></div>
        <div class="k">Profit factor</div><div>${r.pf == null ? '-' : r.pf} <span class="muted">(test ${r.bt_pf})</span></div>
        <div class="k">Result</div><div>${pts ? (r.total >= 0 ? '+' : '') + r.total + ' points' : (r.total >= 0 ? '+' : '') + r.total + 'R = ' + money(r.usd)}</div>
+       ${r.drop != null && r.test_drop != null ? `<div class="k">Losing stretch</div><div>${r.drop}${pts ? ' pts' : 'R'} <span class="muted">(pause at ${(1.5 * r.test_drop).toFixed(1)})</span></div>` : ''}
        ${pts ? '' : `<div class="k">Per trade</div><div>${r.avg >= 0 ? '+' : ''}${r.avg}R <span class="muted">(test +${r.bt_r}R)</span></div>`}`
       : `<div class="k">Closed trades</div><div>none yet</div><div class="k">Expected</div><div>about ${r.bt_per_month} a month</div>`;
     return `<div class="card"><div style="font-weight:800">${esc(r.name)}</div><div class="grid">${live}</div>
