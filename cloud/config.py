@@ -19,7 +19,7 @@ DEFAULTS = {
     "DATA_DIR": "/tmp/tradecore-data",
     "PORT": "7860",
     "MAIN_DECISION_MINUTES": "5",     # the gold 1h trend strategy: 5 = your desktop setting, 60 = the tested live rule
-    "MARKETS": "XAUUSD_BO4H,XAUUSD_BO4H_BIG,XAUUSD_BO4H_3R,XAUUSD_RC2,BTCUSD_BO1H,NAS100_NOISE,USDJPY_BO4H_BIG,NAS100_NOISE_PT",
+    "MARKETS": "XAUUSD_BO4H_BIG,XAUUSD_RC2,BTCUSD_BO1H,NAS100_NOISE,USDJPY_BO4H_BIG",   # 2026-10-09: the followed set only
     "SECURE_COOKIE": "1",             # 0 only for a local http test
 }
 

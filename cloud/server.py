@@ -110,7 +110,7 @@ ALERTS_BAR = """
       const t = await (await fetch('/api/team', {credentials: 'same-origin'})).json();
       if (!t.this_month) return;
       const mo = t.this_month;
-      el.innerHTML = '<b style="color:#e8ecf5">GOLD TEAM</b> (round numbers + 4h 3R) &middot; this month '
+      el.innerHTML = '<b style="color:#e8ecf5">MY TEAM</b> (5 strategies) &middot; this month '
         + `<b style="color:${col(mo.r)}">${mo.r >= 0 ? '+' : ''}${mo.r.toFixed(2)}R ${m(mo.usd)}</b> from ${mo.n} trade(s)`
         + ` &middot; test: about ${m(t.test.avg_month_usd)} a month` + (t.warning ? ' &middot; <b style="color:#ff6b78">check it</b>' : '')
         + ' <span style="color:#35d07f;font-weight:700">&rsaquo; details</span>';
@@ -409,7 +409,7 @@ def api_user_settings():
             return jsonify({"ok": True, "settings": s})
         except ValueError as e:
             return jsonify({"ok": False, "msg": str(e)}), 400
-    return jsonify({"settings": eng.user, "names": NAMES})
+    return jsonify({"settings": eng.user, "names": {k: NAMES[k] for k in ["MAIN"] + list(eng.keys) if k in NAMES}})
 
 
 @app.post("/api/start")

@@ -60,10 +60,14 @@ MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,35
                  60: (30.0, 1.42, 0.19, 4.0, "2015-26, decides every hour, 531 trades")}
 # The steadiest mix an Exness cent account can trade (experiments/scoreboard_cent_teams.py, 2026-10-07). It was chosen
 # AFTER seeing the scoreboard, so it is weaker evidence than a test. What the two did together, 2017-11 -> 2026-09:
-TEAM = ("XAUUSD_RC2", "XAUUSD_BO4H_3R")
-TEAM_BACKTEST = {"months_green": 72.9, "avg_month_r": 1.13, "worst_month_r": -5.4, "max_dd_r": -6.5, "per_month": 9.8,
-                 "per_trade_r": 0.116, "win": 66.3, "pf": 1.49, "years_green": "10 of 10",
-                 "note": "2017-11 -> 2026-09, 1,046 trades; chosen after seeing the results, so weaker than a test"}
+# 2026-10-09 the user follows these five (alerts on, one trade per signal): the team card shows them together.
+# What they did together 2018-03 -> 2026-09 at 1R each (big_team_study trades + the 60-minute gold 1-hour trend):
+TEAM = ("XAUUSD_BO4H_BIG", "XAUUSD_RC2", "MAIN", "USDJPY_BO4H_BIG", "BTCUSD_BO1H")
+TEAM_NAME = "My team (gold big target + round numbers + 1h trend + USD/JPY + BTC)"
+TEAM_BACKTEST = {"months_green": 73.8, "avg_month_r": 5.31, "worst_month_r": -9.87, "max_dd_r": -20.7, "per_month": 23.6,
+                 "per_trade_r": 0.226, "win": 44.8, "pf": 1.53, "years_green": "9 of 9",
+                 "note": "2018-03 -> 2026-09, 2,417 trades; each member passed its own test, the team itself is "
+                         "measured on years already seen"}
 PRICE_MARKETS = {"XAUUSD": ("XAUUSDm", "Gold"), "USDJPY": ("USDJPYm", "USD/JPY"), "BTCUSD": ("BTCUSDm", "BTC"),
                  "NAS100": ("USTECm", "Nasdaq-100 index")}
 NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -639,7 +643,7 @@ class CloudEngine:
         wk_all = [self._closed_r(k) for k in ["MAIN"] + [k for k in self.keys if not k.startswith("NAS100_NOISE")]]
         wk_all = [d[d["at"] >= now - pd.Timedelta(days=7)] for d in wk_all]
         n_all, r_all = sum(len(d) for d in wk_all), sum(float(d["r"].sum()) for d in wk_all)
-        lines = [f"Gold team (round numbers + 4h 3R): this week {w['n']} closed, {w['r']:+.2f}R ({m(w['usd'])}); "
+        lines = [f"{TEAM_NAME}: this week {w['n']} closed, {w['r']:+.2f}R ({m(w['usd'])}); "
                  f"this month {mo['r']:+.2f}R ({m(mo['usd'])}). Test: about {m(tb['avg_month_usd'])} a month, "
                  f"{tb['months_green']:.0f}% of months in profit. Verdict: {tm['verdict'].split(' - ')[0]}.",
                  f"All strategies this week: {n_all} closed, {r_all:+.2f}R ({m(r_all * risk)}) at ${risk:.2f} a trade."]

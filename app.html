@@ -860,7 +860,8 @@ function renderSimple(s) {
     } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: friendlyMain(sig && sig.reason) });
     views.push(['MAIN', v]);
   }
-  ['XAUUSD_BO4H', 'XAUUSD_BO4H_BIG', 'XAUUSD_BO4H_3R', 'BTCUSD_BO1H', 'XAUUSD_RC2', 'USDJPY_BO4H_BIG'].forEach(key => {   // ---- the forward-test strategies
+  const running = new Set((s.markets || []).map(m => m.key));      // only the strategies the app runs (none known yet: all)
+  ['XAUUSD_BO4H', 'XAUUSD_BO4H_BIG', 'XAUUSD_BO4H_3R', 'BTCUSD_BO1H', 'XAUUSD_RC2', 'USDJPY_BO4H_BIG'].filter(k => !running.size || running.has(k)).forEach(key => {   // ---- the forward-test strategies
     const m = ms[key];
     const dg = key.startsWith('USDJPY') ? 3 : 2;
     const v = { rec: m ? m.record : null, next: nextText(key, s), price: m ? fx(m.price, dg) : '—' };
