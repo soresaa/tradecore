@@ -110,7 +110,8 @@ ALERTS_BAR = """
       const t = await (await fetch('/api/team', {credentials: 'same-origin'})).json();
       if (!t.this_month) return;
       const mo = t.this_month;
-      el.innerHTML = '<b style="color:#e8ecf5">MY TEAM</b> (5 strategies) &middot; this month '
+      el.innerHTML = (t.weekend ? '<b style="color:#ffb84d">WEEKEND</b>: markets closed, only BTC runs until Sunday 21:00 UTC &middot; ' : '')
+        + '<b style="color:#e8ecf5">MY TEAM</b> (5 strategies) &middot; this month '
         + `<b style="color:${col(mo.r)}">${mo.r >= 0 ? '+' : ''}${mo.r.toFixed(2)}R ${m(mo.usd)}</b> from ${mo.n} trade(s)`
         + ` &middot; test: about ${m(t.test.avg_month_usd)} a month` + (t.warning ? ' &middot; <b style="color:#ff6b78">check it</b>' : '')
         + ' <span style="color:#35d07f;font-weight:700">&rsaquo; details</span>';

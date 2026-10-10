@@ -74,6 +74,17 @@ NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 NEWS_COUNTRIES = ("USD", "JPY")
 
 
+WEEKEND_KEEP = ("BTCUSD_BO1H",)                     # crypto trades 24/7; everything else is closed at the weekend
+
+
+def weekend_now(t: datetime = None) -> bool:
+    """Gold, forex and the US indices are closed from Friday 22:00 UTC (after gold's last candle, summer and winter)
+    to Sunday 21:00 UTC (just before forex / gold reopen): the server then runs BTC only."""
+    t = t or datetime.utcnow()
+    wd, h = t.weekday(), t.hour
+    return (wd == 4 and h >= 22) or wd == 5 or (wd == 6 and h < 21)
+
+
 def lot_text(key: str, entry, sl, user: dict) -> str:
     """'Lot 0.02 = risk $0.96' for the user's risk per trade and account type (cent lot = 0.01 standard lot)."""
     import math
@@ -281,16 +292,22 @@ class CloudEngine:
                     self.failed = {}                 # retry whatever could not start (no token yet, network)
                     self._build()
                     last_build = time.time()
+                wk = weekend_now()
+                if wk != getattr(self, "_weekend", None):
+                    self._weekend = wk
+                    self.log("weekend mode ON - markets closed, only BTC runs until Sunday 21:00 UTC" if wk
+                             else "weekend mode OFF - all strategies run again")
                 if self.running:
-                    if self.main is not None:
+                    if self.main is not None and not wk:
                         try:
                             self.price = self.main_feed.current_price()
                             self.main.tick()
                             self.error = None
                         except Exception as e:
                             self.error = f"gold 1-hour trend: {e}"
-                    for m in list(self.markets.values()):
-                        m.tick()
+                    for k, m in list(self.markets.items()):
+                        if not wk or k in WEEKEND_KEEP:
+                            m.tick()
                     self.last_tick_at = datetime.now().isoformat(timespec="seconds")
                     self._watch()
                 self.persist.maybe_push()
@@ -559,7 +576,7 @@ class CloudEngine:
             m = self.markets.get(k)
             err = getattr(m, "error", None) if m is not None else self.failed.get(k, "not started yet")
             strategies[k] = {"name": NAMES.get(k, k), "ok": not err, "error": clean(err)}
-        out = {"running": self.running, "checked_utc": datetime.utcnow().isoformat(timespec="seconds"),
+        out = {"running": self.running, "weekend_mode": weekend_now(), "checked_utc": datetime.utcnow().isoformat(timespec="seconds"),
                "feeds": feeds, "strategies": strategies}
         self._health = (now, out)
         return out
@@ -622,7 +639,7 @@ class CloudEngine:
             verdict = "losing - watch it"
         warn = ("The drop is already bigger than the worst drop in the test - stop following it and check."
                 if dd < 1.5 * tb["max_dd_r"] else "")
-        return {"members": members, "risk_usd": risk, "verdict": verdict, "warning": warn,
+        return {"members": members, "risk_usd": risk, "verdict": verdict, "warning": warn, "weekend": weekend_now(),
                 "this_month": this, "months": list(reversed(months))[:24],
                 "week": {"n": int(len(wk)), "r": round(float(wk["r"].sum()), 2), "usd": round(float(wk["r"].sum()) * risk, 2)},
                 "total": {"n": n, "r": round(float(t["r"].sum()), 2), "usd": round(float(t["r"].sum()) * risk, 2),
@@ -722,7 +739,11 @@ class CloudEngine:
     def prices(self) -> dict:
         out = {}
         f = getattr(self, "factory", None)
+        wk = weekend_now()
         for m, (sym, _) in PRICE_MARKETS.items():
+            if wk and m != "BTCUSD":                     # closed at the weekend: no price to ask for
+                out[m] = None
+                continue
             try:
                 out[m] = float(f(sym).current_price()) if f else None
             except Exception:
