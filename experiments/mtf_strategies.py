@@ -30,7 +30,7 @@ import pandas as pd
 import trap_candidates as tc
 from deep_search_study import sig_frame
 
-TF_HOURS = {"15min": 0.25, "1h": 1.0, "4h": 4.0, "1D": 24.0}
+TF_HOURS = {"15min": 0.25, "1h": 1.0, "2h": 2.0, "4h": 4.0, "1D": 24.0}
 
 
 def tf_bars(f, tf):

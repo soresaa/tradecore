@@ -247,6 +247,8 @@ BTC_BO1H_SPEC = {"base": "DON:1h:55"}
 # at 0.5R, still closed after 2 hours.
 # The gold 4h breakout with the two other exits the user chose to watch (2026-10-04). Same entries as GOLD_BO4H_SPEC.
 GOLD_BO4H_BIG_SPEC = dict(GOLD_BO4H_SPEC, exits={"r1": 2.0, "r2": 6.0, "rule": "breakeven", "hold": 120.0, "stop_mult": 0.5})
+# The same big-target gold breakout on 2-hour candles: PASSED its own test 2026-11-03 (experiments/bo2h_btc_study.py).
+GOLD_BO2H_BIG_SPEC = dict(GOLD_BO4H_BIG_SPEC, base="DON:2h:20")
 GOLD_BO4H_3R_SPEC = dict(GOLD_BO4H_SPEC, exits={"r1": 0.75, "r2": 3.0, "rule": "partial_tp1", "hold": 120.0, "stop_mult": 1.0})
 RC2_SPEC = {"base": "RC", "filters": ["rpos24 >= 0.97", "er_h1 >= 0.12", "session != 'late'"],
             "exits": {"r1": 0.5, "r2": 0.5, "rule": "no_breakeven", "stop_mult": 1.0}}
@@ -319,6 +321,13 @@ PLAYBOOK = {
                         "evidence": "Final check 2022-04 to 2026-09: 139 trades, 24% won, +35.4R, PF 1.40, all 4 quarters "
                                     "positive, worst drop -10.8R, longest losing streak 13. Paper forward test.",
                         "lookback": LAB_LOOKBACK},
+    "XAUUSD_BO2H_BIG": {"broker": "XAUUSDm", "cost_key": "XAUUSD", "name": "XAU/USD 2h breakout - big target",
+                        "strategy": "2h breakouts (same filters), stop 1 x 2h ATR, 2R -> stop to entry, TP 6R, out after 120h",
+                        "fn": make_signal_fn(GOLD_BO2H_BIG_SPEC, "Gold 2h big target"), "status": "TEST-PASSED",
+                        "exit_rule": "breakeven", "max_hold": 120.0, "decision_minutes": 120, "decision_offset": 5,
+                        "evidence": "Final check 2022-04 to 2026-09: 256 trades, 21% won, +107.4R, PF 1.65, all 4 quarters "
+                                    "positive (one quarter gave +69.6R), worst drop -20.6R. Paper forward test.",
+                        "lookback": LAB_LOOKBACK},
     "XAUUSD_BO4H_3R": {"broker": "XAUUSDm", "cost_key": "XAUUSD", "name": "XAU/USD 4h breakout - 3R",
                        "strategy": "same 4h breakouts, stop 2 x ATR, half at 0.75R + stop to entry, rest 3R, 120h",
                        "fn": make_signal_fn(GOLD_BO4H_3R_SPEC, "Gold 4h 3R"), "status": "TEST-PASSED",
@@ -376,7 +385,7 @@ PLAYBOOK = {
 }
 
 # never the live gold slot; XAUUSD_RC is a separate paper journal
-FORWARD_MARKETS = ("XAUUSD_BO4H", "XAUUSD_BO4H_BIG", "XAUUSD_BO4H_3R", "BTCUSD_BO1H", "XAUUSD_RC2", "NAS100_NOISE",
+FORWARD_MARKETS = ("XAUUSD_BO4H", "XAUUSD_BO4H_BIG", "XAUUSD_BO2H_BIG", "XAUUSD_BO4H_3R", "BTCUSD_BO1H", "XAUUSD_RC2", "NAS100_NOISE",
                    "NAS100_NOISE_PT",
                    "USDJPY_BO4H_BIG", "EURUSD_BBH", "BTCUSD", "GBPUSD")
 

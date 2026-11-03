@@ -31,7 +31,7 @@ EXP = os.path.join(HERE, "experiments")
 if EXP not in sys.path:
     sys.path.insert(0, EXP)
 
-TF_MINUTES = {"5min": 5, "15min": 15, "1h": 60, "4h": 240, "1D": 1440}
+TF_MINUTES = {"5min": 5, "15min": 15, "1h": 60, "2h": 120, "4h": 240, "1D": 1440}
 # Bases that are not timeframe names, and the candle they decide on.
 SPECIAL_BASES = {"RC": "5min",           # gold round-number cascade (edge_candidates.c4_round_cascade), every candle
                  "BBH": "5min"}          # EUR/USD 1h band fade (experiments/fx_improve.fam_BBH): signals on the HH:00 candle
@@ -46,10 +46,20 @@ def tf_of(spec: dict) -> str:
     return parts[1] if len(parts) > 1 and parts[1] in TF_MINUTES else "1h"
 
 
-def closes_bar(t: pd.Timestamp, tf: str) -> bool:
-    """Is the 5-minute candle opened at t the last candle of its tf bar?"""
+def closes_bar(t: pd.Timestamp, tf: str, daily_break: bool = True) -> bool:
+    """Is the 5-minute candle opened at t the last candle of its tf bar?
+    Markets with a daily break (gold, forex, indices) stop at 17:00 New York and reopen an hour later. In US summer
+    time that is 21:00 UTC, so the 20:00-22:00 2h bar ends at 20:55 and the study decides there; the bar is over
+    when the reopening candle belongs to the next bar. Crypto trades 24/7 (daily_break=False)."""
     end = t + pd.Timedelta(minutes=5)
-    return (end.hour * 60 + end.minute) % TF_MINUTES[tf] == 0
+    if (end.hour * 60 + end.minute) % TF_MINUTES[tf] == 0:
+        return True
+    if daily_break and TF_MINUTES[tf] > 60:
+        ny = end.tz_localize("UTC").tz_convert("America/New_York") if end.tzinfo is None else end.tz_convert("America/New_York")
+        if ny.hour == 17 and ny.minute == 0:
+            reopen = end + pd.Timedelta(minutes=60)
+            return reopen.floor(f"{TF_MINUTES[tf]}min") != t.floor(f"{TF_MINUTES[tf]}min")
+    return False
 
 
 _LABS: "dict" = {}                  # candles -> Lab, shared by every strategy on the same symbol and candle
@@ -190,7 +200,7 @@ def make_signal_fn(spec: dict, label: str):
         t = m5.index[-1]
         lab, sig, base = study_signals(m5, spec)
         info = _describe(lab, spec, tf)
-        if not closes_bar(t, tf):
+        if not closes_bar(t, tf, daily_break=not str(symbol).upper().startswith(("BTC", "ETH"))):
             nxt = (t + pd.Timedelta(minutes=5)).ceil(f"{TF_MINUTES[tf]}min")
             return Signal("NO TRADE", 0, {}, f"{label}: waits for the {tf} candle to close "
                                               f"(next decision {nxt:%H:%M} UTC)", None, info)
@@ -211,4 +221,8 @@ def make_signal_fn(spec: dict, label: str):
 
     fn.spec = spec
     fn.tf = tf
+    if TF_MINUTES[tf] > 60:
+        # the paper trader decides on every full tf bar; this adds the bar that the daily break cuts short
+        fn.extra_decision = lambda bar_t, symbol="": closes_bar(
+            bar_t, tf, daily_break=not str(symbol).upper().startswith(("BTC", "ETH")))
     return fn

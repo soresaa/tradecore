@@ -676,8 +676,10 @@ class PaperTrader:
         # the exact data the backtest decides on. Re-running the engine on every
         # poll evaluated half-formed candles thousands of times a day.
         bar_t = self.feed.latest_closed_bar_time()
+        extra = getattr(self.signal_fn, "extra_decision", None)      # e.g. a 2h bar cut short by the daily break
         if (bar_t is None
-                or (bar_t.hour * 60 + bar_t.minute + self.decision_offset_minutes) % self.decision_minutes != 0
+                or ((bar_t.hour * 60 + bar_t.minute + self.decision_offset_minutes) % self.decision_minutes != 0
+                    and not (extra is not None and extra(bar_t, self.symbol)))
                 or bar_t == self._last_decision_bar):
             return
         self._last_decision_bar = bar_t

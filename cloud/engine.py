@@ -26,10 +26,11 @@ from cloud.push import Push            # noqa: E402
 from cloud.persist import Persist      # noqa: E402
 
 NAMES = {"MAIN": "Gold 1-hour trend", "XAUUSD_BO4H": "Gold 4-hour breakout", "XAUUSD_BO4H_BIG": "Gold 4-hour big target",
+         "XAUUSD_BO2H_BIG": "Gold 2-hour big target",
          "XAUUSD_BO4H_3R": "Gold 4-hour 3R", "XAUUSD_RC2": "Gold round numbers", "BTCUSD_BO1H": "BTC 1-hour breakout",
          "NAS100_NOISE": "NAS100 day trade", "USDJPY_BO4H_BIG": "USD/JPY 4-hour big target",
          "NAS100_NOISE_PT": "NAS100 + TradeCore trend (research)"}
-SYMBOL = {"MAIN": "XAUUSD", "XAUUSD_BO4H": "XAUUSD", "XAUUSD_BO4H_BIG": "XAUUSD", "XAUUSD_BO4H_3R": "XAUUSD",
+SYMBOL = {"MAIN": "XAUUSD", "XAUUSD_BO4H": "XAUUSD", "XAUUSD_BO4H_BIG": "XAUUSD", "XAUUSD_BO2H_BIG": "XAUUSD", "XAUUSD_BO4H_3R": "XAUUSD",
           "XAUUSD_RC2": "XAUUSD", "BTCUSD_BO1H": "BTCUSD", "NAS100_NOISE": "USTEC (NAS100)", "USDJPY_BO4H_BIG": "USDJPY",
           "NAS100_NOISE_PT": "USTEC (NAS100)"}
 POLL_SECONDS = 10
@@ -44,6 +45,7 @@ USER_DEFAULTS = {"risk_usd": 1.0, "account": "standard", "muted": [], "daily_sum
 BACKTEST = {
     "XAUUSD_BO4H": (41.5, 1.30, 0.15, 2.2, "final test 2022-26, 118 trades"),
     "XAUUSD_BO4H_BIG": (24.0, 1.40, 0.25, 2.6, "final check 2022-26, 139 trades"),
+    "XAUUSD_BO2H_BIG": (21.1, 1.65, 0.42, 4.8, "final check 2022-26, 256 trades"),
     "XAUUSD_BO4H_3R": (64.2, 1.46, 0.16, 2.3, "final check 2022-26"),
     "XAUUSD_RC2": (65.4, 1.37, 0.08, 11.0, "final test 2022-26, 587 trades"),
     "BTCUSD_BO1H": (37.7, 1.39, 0.21, 6.4, "final test 2025-26, 130 trades"),
@@ -53,7 +55,7 @@ BACKTEST = {
 }
 # The worst losing stretch each strategy had in its tests (R; NAS100 in points at today's price), for the safety brake
 # (PAUSE when a live stretch is 1.5x deeper). 2018-26 where the team study measured it, else the full history.
-TEST_DROP = {"XAUUSD_RC2": 6.3, "XAUUSD_BO4H_BIG": 10.8, "XAUUSD_BO4H_3R": 6.6, "XAUUSD_BO4H": 15.0,
+TEST_DROP = {"XAUUSD_RC2": 6.3, "XAUUSD_BO4H_BIG": 10.8, "XAUUSD_BO2H_BIG": 20.6, "XAUUSD_BO4H_3R": 6.6, "XAUUSD_BO4H": 15.0,
              "USDJPY_BO4H_BIG": 25.0, "BTCUSD_BO1H": 13.7, "NAS100_NOISE": 3100.0, "NAS100_NOISE_PT": 3100.0}
 TEST_DROP_MAIN = {60: 13.2, 15: 25.2, 5: 36.0}        # gold 1-hour trend, by "decide every" (2015-26 test)
 MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,355 trades"),
@@ -62,13 +64,14 @@ MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,35
 # AFTER seeing the scoreboard, so it is weaker evidence than a test. What the two did together, 2017-11 -> 2026-09:
 # 2026-10-09 the user follows these five (alerts on, one trade per signal): the team card shows them together.
 # What they did together 2018-03 -> 2026-09 at 1R each (big_team_study trades + the 60-minute gold 1-hour trend):
-TEAM = ("XAUUSD_BO4H_BIG", "XAUUSD_RC2", "MAIN", "USDJPY_BO4H_BIG", "BTCUSD_BO1H")
-TEAM_NAME = "My team (gold big target + round numbers + 1h trend + USD/JPY + BTC)"
-TEAM_BACKTEST = {"months_green": 73.8, "avg_month_r": 5.31, "worst_month_r": -9.87, "max_dd_r": -20.7, "per_month": 23.6,
-                 "per_trade_r": 0.226, "win": 44.8, "pf": 1.53, "years_green": "9 of 9",
-                 "note": "2018-03 -> 2026-09, 2,417 trades; each member passed its own test, the team itself is "
+# 2026-11-03 the user removed USD/JPY (after 3 losing demo trades); same calculation without UJ_BIG.
+TEAM = ("XAUUSD_BO4H_BIG", "XAUUSD_RC2", "MAIN", "BTCUSD_BO1H")
+TEAM_NAME = "My team (gold big target + round numbers + 1h trend + BTC)"
+TEAM_BACKTEST = {"months_green": 73.8, "avg_month_r": 4.58, "worst_month_r": -6.74, "max_dd_r": -14.9, "per_month": 20.9,
+                 "per_trade_r": 0.221, "win": 47.4, "pf": 1.55, "years_green": "9 of 9",
+                 "note": "2018-03 -> 2026-09, 2,141 trades; each member passed its own test, the team itself is "
                          "measured on years already seen"}
-PRICE_MARKETS = {"XAUUSD": ("XAUUSDm", "Gold"), "USDJPY": ("USDJPYm", "USD/JPY"), "BTCUSD": ("BTCUSDm", "BTC"),
+PRICE_MARKETS = {"XAUUSD": ("XAUUSDm", "Gold"), "BTCUSD": ("BTCUSDm", "BTC"),     # no USD/JPY: saves Twelve Data credits
                  "NAS100": ("USTECm", "Nasdaq-100 index")}
 NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 NEWS_COUNTRIES = ("USD", "JPY")
@@ -268,6 +271,11 @@ class CloudEngine:
         fw = ForwardWorker(log=self.log, keys=self.keys, feed_factory=factory, journal_dir=self.data_dir)
         fw.markets = self.markets
         fw._build()
+        for k in [x.strip() for x in self.cfg.get("CLOSE_ONLY", "").split(",") if x.strip()]:
+            m = self.markets.get(k)
+            if m is not None:                    # finishes the trade it has open, takes no new one
+                m.trader._maybe_signal = lambda: None
+                self.log(f"{NAMES.get(k, k)}: close-only (finishes its open trade, no new entries)")
         self.failed = dict(fw.failed)
         self._worker = fw
         self.connected = self.main is not None or bool(self.markets)
