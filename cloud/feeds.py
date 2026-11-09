@@ -5,7 +5,7 @@ get_recent_5m, get_daily. Candles are BID prices on UTC time (like Exness MT5) a
 5-minute candles are returned, exactly as the desktop app does.
 
   OandaFeed   gold, NAS100, USD/JPY, EUR/USD, GBP/USD from a free OANDA practice account (token needed)
-  BinanceFeed BTC from Binance's public market data (no account)
+  BinanceFeed BTC from Binance's public market data (no account); OKX / Bybit when Binance rate-limits
 
 Each feed keeps the candles it has already downloaded in memory and on disk, and only asks for
 the new ones (a few kilobytes a minute). One feed per symbol is shared by every strategy on it.
@@ -203,17 +203,102 @@ class OandaFeed(_CandleFeed):
 
 
 class BinanceFeed(_CandleFeed):
+    """BTC 5-minute candles from Binance's public market data (no account), with OKX and Bybit as backups.
+
+    Binance answers 429 (slow down) or 418 (this IP is banned for a while) when one IP asks too much - and on a
+    shared cloud IP (Render) other people's apps count too. During a ban every new request makes the ban LONGER, so a
+    source that answered 418/429/403/451 is left alone for as long as it asks (Retry-After; at least 10 minutes for a
+    ban, 1 minute for 429), and the backups give the candles and the price meanwhile. All three are BTC/USDT spot,
+    so the candles match within a few dollars. `source` = where the last answer came from (shown on /health)."""
     BASE = "https://data-api.binance.vision/api/v3"
+    OKX = "https://www.okx.com/api/v5/market"
+    BYBIT = "https://api.bybit.com/v5/market"
     PAGE = 1000
+    ORDER = ("binance", "okx", "bybit")
+    LABEL = {"binance": "Binance", "okx": "OKX", "bybit": "Bybit"}
 
     def __init__(self, pair: str, cache_dir: str, digits: int):
         super().__init__(pair, cache_dir, digits)
         self.s = requests.Session()
+        self.s.headers["User-Agent"] = "tradecore-paper-bot/1.0"
+        self._paused = {}                    # source -> monotonic time it may be asked again
+        self.source = "Binance"
 
-    def _klines(self, interval: str, **kw) -> list:
-        r = self.s.get(f"{self.BASE}/klines", params={"symbol": self.symbol, "interval": interval, **kw}, timeout=20)
+    # ---- one HTTP call, with the rate-limit pause
+    def _http(self, src: str, url: str, params: dict, timeout: float = 20):
+        until = self._paused.get(src, 0.0)
+        if time.monotonic() < until:
+            raise RuntimeError(f"{src} paused {int(until - time.monotonic())} s after a rate limit")
+        r = self.s.get(url, params=params, timeout=timeout)
+        if r.status_code in (418, 429, 403, 451):
+            try:
+                ra = float(r.headers.get("Retry-After") or 0)
+            except ValueError:
+                ra = 0.0
+            self._paused[src] = time.monotonic() + max(ra, 60.0 if r.status_code == 429 else 600.0)
         r.raise_for_status()
         return r.json()
+
+    def _try(self, op: str, *args):
+        errors = []
+        for src in self.ORDER:
+            if time.monotonic() < self._paused.get(src, 0.0):
+                errors.append(f"{src}: paused")
+                continue
+            try:
+                out = getattr(self, f"_{src}_{op}")(*args)
+                self.source = self.LABEL[src]
+                return out
+            except Exception as e:
+                errors.append(f"{src}: {str(e)[:120]}")
+        raise RuntimeError("no BTC source answered - " + "; ".join(errors))
+
+    def _fetch_closed(self, since, need):
+        return self._try("closed", since, need)
+
+    def _fetch_quote(self):
+        return self._try("quote")
+
+    def _fetch_daily(self, n):
+        return self._try("daily", n)
+
+    # ---- shared paging for the backups: page(end) -> closed candles older than `end` (the newest when end is None)
+    def _paged(self, page, since, need):
+        frames = []
+        if since is None or need > 0:
+            end, got = (self.m5.index[0] if len(self.m5) and need > 0 else None), 0   # older than what we have
+            for _ in range(200):
+                if got >= max(need, 1):
+                    break
+                df = page(end)
+                if not len(df):
+                    break
+                frames.append(df)
+                got += len(df)
+                end = df.index[0]
+        if since is not None:                     # the new candles since the last one we have
+            end = None
+            for _ in range(60):
+                df = page(end)
+                if not len(df):
+                    break
+                frames.append(df[df.index > since])
+                if df.index[0] <= since:
+                    break
+                end = df.index[0]
+        frames = [f for f in frames if len(f)]
+        return pd.concat(frames).sort_index() if frames else pd.DataFrame(columns=COLS)
+
+    @staticmethod
+    def _frame(rows) -> pd.DataFrame:
+        if not rows:
+            return pd.DataFrame(columns=COLS)
+        df = pd.DataFrame(rows, columns=["time"] + COLS).set_index("time").sort_index()
+        return df[~df.index.duplicated(keep="last")]
+
+    # ---- Binance
+    def _klines(self, interval: str, **kw) -> list:
+        return self._http("binance", f"{self.BASE}/klines", {"symbol": self.symbol, "interval": interval, **kw})
 
     @staticmethod
     def _rows(k: list, closed_only: bool = True) -> pd.DataFrame:
@@ -224,7 +309,7 @@ class BinanceFeed(_CandleFeed):
             return pd.DataFrame(columns=COLS)
         return pd.DataFrame(rows, columns=["time"] + COLS).set_index("time")
 
-    def _fetch_closed(self, since, need):
+    def _binance_closed(self, since, need):
         frames = []
         if since is None or need > 0:
             end, got = (self.m5.index[0] if len(self.m5) and need > 0 else None), 0   # older than what we have
@@ -243,14 +328,74 @@ class BinanceFeed(_CandleFeed):
         frames = [f for f in frames if len(f)]
         return pd.concat(frames).sort_index() if frames else pd.DataFrame(columns=COLS)
 
-    def _fetch_quote(self):
-        r = self.s.get(f"{self.BASE}/ticker/bookTicker", params={"symbol": self.symbol}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
+    def _binance_quote(self):
+        j = self._http("binance", f"{self.BASE}/ticker/bookTicker", {"symbol": self.symbol}, timeout=15)
         return float(j["bidPrice"]), float(j["askPrice"]), pd.Timestamp.now(tz="UTC")
 
-    def _fetch_daily(self, n):
+    def _binance_daily(self, n):
         return self._rows(self._klines("1d", limit=min(n, 1000)), closed_only=False)[["open", "high", "low", "close"]]
+
+    # ---- OKX (BTC-USDT spot): newest first, 'confirm' = 1 on closed candles
+    def _okx_inst(self):
+        return self.symbol.replace("USDT", "-USDT")
+
+    def _okx_rows(self, data, closed_only=True):
+        return self._frame([(pd.Timestamp(int(x[0]), unit="ms"), float(x[1]), float(x[2]), float(x[3]), float(x[4]),
+                             float(x[5])) for x in data if not closed_only or str(x[8]) == "1"])
+
+    def _okx_check(self, j):
+        if str(j.get("code")) != "0":
+            raise RuntimeError(f"okx {j.get('code')} {j.get('msg')}")
+        return j["data"]
+
+    def _okx_page(self, end):
+        if end is None:
+            j = self._http("okx", f"{self.OKX}/candles", {"instId": self._okx_inst(), "bar": "5m", "limit": 300})
+        else:
+            j = self._http("okx", f"{self.OKX}/history-candles", {"instId": self._okx_inst(), "bar": "5m", "limit": 100,
+                                                                "after": int(end.timestamp() * 1000)})
+        return self._okx_rows(self._okx_check(j))
+
+    def _okx_closed(self, since, need):
+        return self._paged(self._okx_page, since, need)
+
+    def _okx_quote(self):
+        d = self._okx_check(self._http("okx", f"{self.OKX}/ticker", {"instId": self._okx_inst()}, timeout=15))[0]
+        return float(d["bidPx"]), float(d["askPx"]), pd.Timestamp(int(d["ts"]), unit="ms", tz="UTC")
+
+    def _okx_daily(self, n):
+        j = self._http("okx", f"{self.OKX}/candles", {"instId": self._okx_inst(), "bar": "1Dutc", "limit": min(n, 300)})
+        return self._okx_rows(self._okx_check(j), closed_only=False)[["open", "high", "low", "close"]]
+
+    # ---- Bybit (BTCUSDT spot): newest first, the last candle may still be open
+    def _bybit_rows(self, lst, minutes, closed_only=True):
+        now_ms = time.time() * 1000
+        return self._frame([(pd.Timestamp(int(x[0]), unit="ms"), float(x[1]), float(x[2]), float(x[3]), float(x[4]),
+                             float(x[5])) for x in lst if not closed_only or int(x[0]) + minutes * 60000 <= now_ms])
+
+    def _bybit_check(self, j):
+        if j.get("retCode") != 0:
+            raise RuntimeError(f"bybit {j.get('retCode')} {j.get('retMsg')}")
+        return j["result"]["list"]
+
+    def _bybit_page(self, end):
+        p = {"category": "spot", "symbol": self.symbol, "interval": "5", "limit": 1000}
+        if end is not None:
+            p["end"] = int(end.timestamp() * 1000) - 1
+        return self._bybit_rows(self._bybit_check(self._http("bybit", f"{self.BYBIT}/kline", p)), 5)
+
+    def _bybit_closed(self, since, need):
+        return self._paged(self._bybit_page, since, need)
+
+    def _bybit_quote(self):
+        d = self._bybit_check(self._http("bybit", f"{self.BYBIT}/tickers", {"category": "spot", "symbol": self.symbol},
+                                         timeout=15))[0]
+        return float(d["bid1Price"]), float(d["ask1Price"]), pd.Timestamp.now(tz="UTC")
+
+    def _bybit_daily(self, n):
+        j = self._http("bybit", f"{self.BYBIT}/kline", {"category": "spot", "symbol": self.symbol, "interval": "D",
+                                                        "limit": min(n, 1000)})
+        return self._bybit_rows(self._bybit_check(j), 1440, closed_only=False)[["open", "high", "low", "close"]]
 
 
 def _resample_daily(m5: pd.DataFrame, n: int) -> pd.DataFrame:

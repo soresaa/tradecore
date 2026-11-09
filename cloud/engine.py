@@ -576,7 +576,7 @@ class CloudEngine:
         for sym, fd in list((getattr(f, "feeds", None) or {}).items()):
             m5 = getattr(fd, "m5", None)
             n = int(len(m5)) if m5 is not None else 0
-            feeds[sym] = {"source": type(fd).__name__.replace("Feed", ""), "candles": n,
+            feeds[sym] = {"source": getattr(fd, "source", None) or type(fd).__name__.replace("Feed", ""), "candles": n,
                           "last_candle_utc": str(m5.index[-1]) if n else None,
                           "error": clean(getattr(fd, "_last_error", None) or getattr(fd, "last_error", None))}
         strategies = {"MAIN": {"name": NAMES["MAIN"], "ok": not self.error, "error": clean(self.error)}}
