@@ -746,6 +746,27 @@ const PLAIN = {
           'Stop 1.5 × 1-hour ATR · ONE take profit at 0.5R · if neither is hit, it closes after 2 hours.',
           'Improved and re-tested: 2022-2026 587 trades, 65% won, +47.8R, PF 1.37, every quarter positive (2017-2022: 68% won).'],
   },
+  XAUUSD_RC3R: {
+    name: 'Gold round numbers · 1:3', badge: 'TESTED',
+    how: ['The same signals as the round numbers card: a 5-minute close across a $50 level that is also a new 24-hour high (BUY) or low (SELL).',
+          'Stop 1.5 × 1-hour ATR · ONE take profit at 3R (a win is 3 × the loss) · the stop is never moved · closes after 72 hours if neither is hit.',
+          'Wins only about 1 trade in 3. Expect losing runs of up to 9 trades.',
+          'Final test 2022-2026: 430 trades, 33% won, +54.6R, PF 1.19, worst drop −14.5R.'],
+  },
+  XAUUSD_BO4H_P3R: {
+    name: 'Gold 4-hour · 1:3', badge: 'TESTED',
+    how: ['The same 4-hour breakout signals as the 4-hour cards — only the exit is different.',
+          'Stop 1.5 × 4-hour ATR · ONE take profit at 3R (a win is 3 × the loss) · the stop is never moved · closes after 5 days.',
+          'Wins about 2 trades in 5. About 2-3 signals a month, so quiet weeks are normal.',
+          '2004-2017 +125R, 2017-2022 +30.7R, final test 2022-2026: 135 trades, 39% won, +27.4R, PF 1.33, worst drop −9.6R.'],
+  },
+  XAUUSD_COIL: {
+    name: 'Gold quiet-day breakout', badge: 'RESEARCH',
+    how: ['A new idea: find a very quiet day (the smallest range of the last 7 days). In the next 48 hours, the first 1-hour candle that CLOSES outside that day\'s range decides: BUY above / SELL below, but only with the daily trend.',
+          'Stop on the other side of the quiet day · ONE take profit at 3R · the stop is never moved · closes after 5 days.',
+          'NOT proven: 2004-2017 +24.7R (PF 1.22), 2017-2022 +10.5R (PF 1.39), but only 2 of 4 parts of 2017-2022 were positive. About 1 signal a month.',
+          'Paper side-by-side test from 10 Nov 2026 — do not trade it until it has a live record.'],
+  },
   USDJPY_BO4H_BIG: {
     name: 'USD/JPY 4-hour · big target', badge: 'TESTED',
     how: ['The gold 4-hour breakout rules, copied to USD/JPY without changing anything: BUY when a 4-hour candle CLOSES above the highest high of the last 20 four-hour candles with the daily trend UP (+ the same 3 checks). SELL is the mirror.',
@@ -791,7 +812,15 @@ function waitText(key, m) {
     if (trend === 'DOWN') return `Daily trend <b>DOWN</b>. <b>SELL</b> if a ${unit} candle closes below <b>${lo}</b>.`;
     return `No clear daily trend — no trade until it turns up or down (channel ${lo} – ${hi}).`;
   }
-  if (key === 'XAUUSD_RC2' && tf['round levels']) {
+  if (key === 'XAUUSD_COIL' && tf['quiet day range']) {
+    const parts = String(tf['quiet day range']).split(' - ');
+    const w = tf['window'] || '';
+    if (/closed|still running/.test(w)) return `Quiet day ${tf['quiet day'] || ''} — ${w}.`;
+    if (trend === 'UP')   return `Daily trend <b>UP</b>. <b>BUY</b> if a 1-hour candle closes above <b>${parts[1]}</b> (window ${w}).`;
+    if (trend === 'DOWN') return `Daily trend <b>DOWN</b>. <b>SELL</b> if a 1-hour candle closes below <b>${parts[0]}</b> (window ${w}).`;
+    return `No clear daily trend — no trade (quiet-day range ${parts[0]} – ${parts[1]}).`;
+  }
+  if ((key === 'XAUUSD_RC2' || key === 'XAUUSD_RC3R') && tf['round levels']) {
     const parts = String(tf['round levels']).split(' / ');
     const up = tf['buy needs above'], dn = tf['sell needs below'];
     return `<b>BUY</b> if a 5-minute candle closes above <b>${parts[1]}</b>` + (up ? ` and is a new 24-hour high (above <b>${up}</b>)` : '') +
@@ -802,8 +831,8 @@ function waitText(key, m) {
 
 function nextText(key, s) {
   if (key.includes('BO4H')) return 'next check ' + hhmm(nextUtcBoundary(4)) + ' your time (every 4 hours)';
-  if (key === 'BTCUSD_BO1H') return 'next check ' + hhmm(nextUtcBoundary(1)) + ' your time (every hour)';
-  if (key === 'XAUUSD_RC2') return 'checks every 5-minute candle';
+  if (key === 'BTCUSD_BO1H' || key === 'XAUUSD_COIL') return 'next check ' + hhmm(nextUtcBoundary(1)) + ' your time (every hour)';
+  if (key === 'XAUUSD_RC2' || key === 'XAUUSD_RC3R') return 'checks every 5-minute candle';
   const D = (s.settings && s.settings.decision_minutes) || 60;
   return `checks every ${D} min · next in ${nextDecision().txt}`;
 }
@@ -812,6 +841,12 @@ function levelsHtml(dir, e, sl, tp1, tp2, d, noTarget, tp1Hit, halfAtTp1) {
   const R = riskUsd(), risk = Math.abs(e - sl) || 1;
   const rr = x => Math.abs(x - e) / risk;
   const cell = (l, p, money, cls) => `<div><div class="l">${l}</div><div class="p ${cls}">${isNaN(p) ? '—' : fx(p, d)}</div><div class="m ${cls}">${money}</div></div>`;
+  if (!noTarget && Math.abs(tp1 - tp2) < 1e-9)        // one take profit (the 1:3 cards): show it once
+    return '<div class="clv">' +
+      cell('Entry', e, dir.toUpperCase(), 'grey') +
+      cell('Stop loss', sl, '−$' + R.toFixed(2), 'red') +
+      cell('Take profit (' + rr(tp2).toFixed(1) + 'R)', tp2, '+$' + (R * rr(tp2)).toFixed(2), 'green') +
+      '</div>';
   return '<div class="clv">' +
     cell('Entry', e, dir.toUpperCase(), 'grey') +
     cell(tp1Hit ? 'Stop (at entry)' : 'Stop loss', tp1Hit ? e : sl, tp1Hit ? '$0.00' : '−$' + R.toFixed(2), 'red') +
@@ -861,7 +896,9 @@ function renderSimple(s) {
     views.push(['MAIN', v]);
   }
   const running = new Set((s.markets || []).map(m => m.key));      // only the strategies the app runs (none known yet: all)
-  ['XAUUSD_BO4H', 'XAUUSD_BO4H_BIG', 'XAUUSD_BO4H_3R', 'BTCUSD_BO1H', 'XAUUSD_RC2', 'USDJPY_BO4H_BIG'].filter(k => !running.size || running.has(k)).forEach(key => {   // ---- the forward-test strategies
+  const ONE_TARGET = { XAUUSD_RC3R: '72 hours', XAUUSD_BO4H_P3R: '5 days', XAUUSD_COIL: '5 days' };   // the 1:3 cards
+  ['XAUUSD_BO4H', 'XAUUSD_BO4H_BIG', 'XAUUSD_BO4H_3R', 'BTCUSD_BO1H', 'XAUUSD_RC2', 'USDJPY_BO4H_BIG',
+   'XAUUSD_RC3R', 'XAUUSD_BO4H_P3R', 'XAUUSD_COIL'].filter(k => !running.size || running.has(k)).forEach(key => {   // ---- the forward-test strategies
     const m = ms[key];
     const dg = key.startsWith('USDJPY') ? 3 : 2;
     const v = { rec: m ? m.record : null, next: nextText(key, s), price: m ? fx(m.price, dg) : '—' };
@@ -870,7 +907,8 @@ function renderSimple(s) {
     else if (m.open) {
       const op = m.open, dir = String(op.direction), hit = isTrue(op.tp1_hit);
       Object.assign(v, { st: 'open' + dir, big: 'IN TRADE · ' + dir.toUpperCase(), color: dir === 'buy' ? 'green' : 'red',
-        text: (m.no_target || key === 'XAUUSD_RC2') ? (key === 'XAUUSD_RC2' ? 'Closes at the take profit, or by itself 2 hours after entry' : 'Closes by itself 2 hours after entry') + (op.closes_at ? ' (at ' + hhmm(new Date(op.closes_at)) + ').' : '.')
+        text: ONE_TARGET[key] ? 'One take profit at 3R; the stop is never moved. If neither is hit it closes after ' + ONE_TARGET[key] + '.'
+            : (m.no_target || key === 'XAUUSD_RC2') ? (key === 'XAUUSD_RC2' ? 'Closes at the take profit, or by itself 2 hours after entry' : 'Closes by itself 2 hours after entry') + (op.closes_at ? ' (at ' + hhmm(new Date(op.closes_at)) + ').' : '.')
                           : (hit ? 'TP1 reached — the stop is now at entry, this trade can no longer lose.' : 'Trade is running.'),
         levels: levelsHtml(dir, op.entry, op.sl, op.tp1, op.tp2, dg, m.no_target, hit, key === 'XAUUSD_BO4H_3R') });
     } else Object.assign(v, { st: 'wait', big: 'WAITING', color: 'violet', text: waitText(key, m) });

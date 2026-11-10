@@ -252,6 +252,15 @@ GOLD_BO2H_BIG_SPEC = dict(GOLD_BO4H_BIG_SPEC, base="DON:2h:20")
 GOLD_BO4H_3R_SPEC = dict(GOLD_BO4H_SPEC, exits={"r1": 0.75, "r2": 3.0, "rule": "partial_tp1", "hold": 120.0, "stop_mult": 1.0})
 RC2_SPEC = {"base": "RC", "filters": ["rpos24 >= 0.97", "er_h1 >= 0.12", "session != 'late'"],
             "exits": {"r1": 0.5, "r2": 0.5, "rule": "no_breakeven", "stop_mult": 1.0}}
+# 1:3 cards (user, 2026-11-10: "a win 3x my loss"). One target at 3 x the stop, the stop never moves.
+# Round numbers 3R: PASSED experiments/rc3r_final_test.py (2022-26: 430 trades, 32.6% won, +54.6R, PF 1.19, maxDD -14.5R).
+RC3R_SPEC = {"base": "RC", "filters": RC2_SPEC["filters"],
+             "exits": {"r1": 3.0, "r2": 3.0, "rule": "no_breakeven", "stop_mult": 1.0, "hold": 72.0}}
+# 4h breakout 1:3, stop 1.5 x ATR(4h): PASSED experiments/gold4h_pure3r.py (2022-26: 135 trades, 39.3% won, +27.4R, PF 1.33).
+GOLD_BO4H_P3R_SPEC = dict(GOLD_BO4H_SPEC, exits={"r1": 3.0, "r2": 3.0, "rule": "no_breakeven", "hold": 120.0, "stop_mult": 0.75})
+# Quiet-day breakout (own idea, RESEARCH): did NOT pass experiments/gold_own_ideas.py (val 2 of 4 quarters). Its builder
+# already sets the 1:3 exit and 120h hold (experiments/coil_strategy.py).
+GOLD_COIL_SPEC = {"base": "COIL"}
 # filters chosen on the pooled EUR/USD + GBP/USD dev trades (experiments/fx_improve.json FILTERS.BBH)
 EURUSD_BBH_SPEC = {"base": "BBH", "filters": ["day_used < 1.20198", "dist50 < 1.94916", "session != 'asia'"]}
 
@@ -342,6 +351,29 @@ PLAYBOOK = {
                    "evidence": "Improved and re-tested 2026-10-03: final test 2022-04 to 2026-09: 587 trades, 65% won, "
                                "+47.8R, PF 1.37, all 4 quarters positive (2017-22: 68% won, PF 1.56). Paper forward test.",
                    "lookback": LAB_LOOKBACK},
+    # 1:3 cards (2026-11-10). One target = 3R; tp1 == tp2 so "breakeven" never moves the stop before the target.
+    "XAUUSD_RC3R": {"broker": "XAUUSDm", "cost_key": "XAUUSD", "name": "XAU/USD round numbers - 1:3",
+                    "strategy": "RC2 entries ($50 cross at a new 24h extreme), stop 1.5 x 1h ATR, ONE target 3R, out after 72h",
+                    "fn": make_signal_fn(RC3R_SPEC, "Gold round numbers 1:3"), "status": "TEST-PASSED",
+                    "exit_rule": "breakeven", "max_hold": 72.0, "decision_minutes": 5,
+                    "evidence": "Final test 2022-04 to 2026-09: 430 trades, 32.6% won, +54.6R, PF 1.19, worst drop -14.5R, "
+                                "longest losing run 9. Paper forward test.",
+                    "lookback": LAB_LOOKBACK},
+    "XAUUSD_BO4H_P3R": {"broker": "XAUUSDm", "cost_key": "XAUUSD", "name": "XAU/USD 4h breakout - 1:3",
+                        "strategy": "same 4h breakouts, stop 1.5 x 4h ATR, ONE target 3R, stop never moved, out after 120h",
+                        "fn": make_signal_fn(GOLD_BO4H_P3R_SPEC, "Gold 4h 1:3"), "status": "TEST-PASSED",
+                        "exit_rule": "breakeven", "max_hold": 120.0, "decision_minutes": 240, "decision_offset": 5,
+                        "evidence": "2004-17 47% won +125R PF 1.77; 2017-22 43% won +30.7R PF 1.56; final test 2022-26: "
+                                    "135 trades, 39% won, +27.4R, PF 1.33, worst drop -9.6R. Paper forward test.",
+                        "lookback": LAB_LOOKBACK},
+    "XAUUSD_COIL": {"broker": "XAUUSDm", "cost_key": "XAUUSD", "name": "XAU/USD quiet-day breakout (research)",
+                    "strategy": "smallest-range day of 7, first 1h close outside it within 48h with the daily trend, "
+                                "stop = other side of that day, ONE target 3R, out after 120h",
+                    "fn": make_signal_fn(GOLD_COIL_SPEC, "Gold quiet-day breakout"), "status": "RESEARCH",
+                    "exit_rule": "breakeven", "max_hold": 120.0, "decision_minutes": 60, "decision_offset": 5,
+                    "evidence": "Did NOT pass: 2004-17 +24.7R PF 1.22, 2017-22 +10.5R PF 1.39 but only 2 of 4 quarters "
+                                "positive. Paper forward test only - do not trade it.",
+                    "lookback": LAB_LOOKBACK},
     "XAUUSD_BO4H": {"broker": "XAUUSDm", "cost_key": "XAUUSD", "name": "XAU/USD 4h breakout",
                     "strategy": "4h 20-bar breakout with the daily trend + 3 filters",
                     "fn": make_signal_fn(GOLD_BO4H_SPEC, "Gold 4h breakout"), "status": "TEST-PASSED",
@@ -386,6 +418,7 @@ PLAYBOOK = {
 
 # never the live gold slot; XAUUSD_RC is a separate paper journal
 FORWARD_MARKETS = ("XAUUSD_BO4H", "XAUUSD_BO4H_BIG", "XAUUSD_BO2H_BIG", "XAUUSD_BO4H_3R", "BTCUSD_BO1H", "XAUUSD_RC2", "NAS100_NOISE",
+                   "XAUUSD_RC3R", "XAUUSD_BO4H_P3R", "XAUUSD_COIL",
                    "NAS100_NOISE_PT",
                    "USDJPY_BO4H_BIG", "EURUSD_BBH", "BTCUSD", "GBPUSD")
 

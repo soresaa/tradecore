@@ -29,10 +29,12 @@ NAMES = {"MAIN": "Gold 1-hour trend", "XAUUSD_BO4H": "Gold 4-hour breakout", "XA
          "XAUUSD_BO2H_BIG": "Gold 2-hour big target",
          "XAUUSD_BO4H_3R": "Gold 4-hour 3R", "XAUUSD_RC2": "Gold round numbers", "BTCUSD_BO1H": "BTC 1-hour breakout",
          "NAS100_NOISE": "NAS100 day trade", "USDJPY_BO4H_BIG": "USD/JPY 4-hour big target",
-         "NAS100_NOISE_PT": "NAS100 + TradeCore trend (research)"}
+         "NAS100_NOISE_PT": "NAS100 + TradeCore trend (research)",
+         "XAUUSD_RC3R": "Gold round numbers 1:3", "XAUUSD_BO4H_P3R": "Gold 4-hour 1:3",
+         "XAUUSD_COIL": "Gold quiet-day breakout (research)"}
 SYMBOL = {"MAIN": "XAUUSD", "XAUUSD_BO4H": "XAUUSD", "XAUUSD_BO4H_BIG": "XAUUSD", "XAUUSD_BO2H_BIG": "XAUUSD", "XAUUSD_BO4H_3R": "XAUUSD",
           "XAUUSD_RC2": "XAUUSD", "BTCUSD_BO1H": "BTCUSD", "NAS100_NOISE": "USTEC (NAS100)", "USDJPY_BO4H_BIG": "USDJPY",
-          "NAS100_NOISE_PT": "USTEC (NAS100)"}
+          "NAS100_NOISE_PT": "USTEC (NAS100)", "XAUUSD_RC3R": "XAUUSD", "XAUUSD_BO4H_P3R": "XAUUSD", "XAUUSD_COIL": "XAUUSD"}
 POLL_SECONDS = 10
 # Exness Standard contract specs: (USD per 1.0 price move per 1 lot, smallest lot). USD/JPY's depends on the price.
 LOT_SPECS = {"XAUUSD": (100.0, 0.01), "BTCUSD": (1.0, 0.01), "USTEC (NAS100)": (1.0, 0.05), "USDJPY": (None, 0.01)}
@@ -52,11 +54,15 @@ BACKTEST = {
     "NAS100_NOISE": (40.2, 1.26, None, 35.0, "2004-26, 2,182 days (results in points)"),
     "USDJPY_BO4H_BIG": (22.8, 1.36, 0.21, 2.6, "final test 2022-26, 136 trades"),
     "NAS100_NOISE_PT": (49.5, 1.65, None, 33.0, "research 2020-23, 422 days (results in points; NOT proven)"),
+    "XAUUSD_RC3R": (32.6, 1.19, 0.13, 8.1, "final test 2022-26, 430 trades"),
+    "XAUUSD_BO4H_P3R": (39.3, 1.33, 0.20, 2.5, "final test 2022-26, 135 trades"),
+    "XAUUSD_COIL": (38.5, 1.22, 0.12, 1.3, "research 2004-17, 200 trades (NOT proven)"),
 }
 # The worst losing stretch each strategy had in its tests (R; NAS100 in points at today's price), for the safety brake
 # (PAUSE when a live stretch is 1.5x deeper). 2018-26 where the team study measured it, else the full history.
 TEST_DROP = {"XAUUSD_RC2": 6.3, "XAUUSD_BO4H_BIG": 10.8, "XAUUSD_BO2H_BIG": 20.6, "XAUUSD_BO4H_3R": 6.6, "XAUUSD_BO4H": 15.0,
-             "USDJPY_BO4H_BIG": 25.0, "BTCUSD_BO1H": 13.7, "NAS100_NOISE": 3100.0, "NAS100_NOISE_PT": 3100.0}
+             "USDJPY_BO4H_BIG": 25.0, "BTCUSD_BO1H": 13.7, "NAS100_NOISE": 3100.0, "NAS100_NOISE_PT": 3100.0,
+             "XAUUSD_RC3R": 14.5, "XAUUSD_BO4H_P3R": 9.6, "XAUUSD_COIL": 15.6}
 TEST_DROP_MAIN = {60: 13.2, 15: 25.2, 5: 36.0}        # gold 1-hour trend, by "decide every" (2015-26 test)
 MAIN_BACKTEST = {5: (30.0, 1.17, 0.08, 10.0, "2015-26, decides every 5 min, 1,355 trades"),
                  60: (30.0, 1.42, 0.19, 4.0, "2015-26, decides every hour, 531 trades")}

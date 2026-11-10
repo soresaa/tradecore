@@ -34,7 +34,8 @@ if EXP not in sys.path:
 TF_MINUTES = {"5min": 5, "15min": 15, "1h": 60, "2h": 120, "4h": 240, "1D": 1440}
 # Bases that are not timeframe names, and the candle they decide on.
 SPECIAL_BASES = {"RC": "5min",           # gold round-number cascade (edge_candidates.c4_round_cascade), every candle
-                 "BBH": "5min"}          # EUR/USD 1h band fade (experiments/fx_improve.fam_BBH): signals on the HH:00 candle
+                 "BBH": "5min",          # EUR/USD 1h band fade (experiments/fx_improve.fam_BBH): signals on the HH:00 candle
+                 "COIL": "1h"}           # gold quiet-day breakout (experiments/coil_strategy.py): decided on 1h closes
 LOOKBACK_BARS = 70000          # ~250 days: daily EMA50, 20-day medians and the 4h channel all settle
 MIN_BARS = 30000
 
@@ -109,6 +110,9 @@ def _register(lab, base: str):
     if base == "BBH" and "BBH" not in lab._built:
         import fx_improve
         lab._built["BBH"] = fx_improve.fam_BBH(lab.m5, lab.f)
+    if base == "COIL" and "COIL" not in lab._built:
+        import coil_strategy
+        lab._built["COIL"] = coil_strategy.coil(lab.m5, lab.f)
 
 
 def study_signals(m5: pd.DataFrame, spec: dict):
@@ -139,6 +143,15 @@ def _describe(lab, spec: dict, tf: str) -> Dict[str, str]:
                 out["buy needs above"] = f"{l + 0.97 * (h - l):.2f}"
                 out["sell needs below"] = f"{l + 0.03 * (h - l):.2f}"
             out["1h trend strength"] = f"{float(lab.f['er_h1'][-1]):.2f} (needs 0.12+)"
+        except Exception as e:
+            out["info"] = f"n/a ({e})"
+        return out
+    if spec["base"] == "COIL":                     # the latest quiet day, its range and the daily trend
+        try:
+            import coil_strategy
+            out.update(coil_strategy.state(lab.f))
+            i = len(lab.m5) - 1
+            out["daily trend"] = ("UP" if lab.f["daily_bull"][i] else "DOWN" if lab.f["daily_bear"][i] else "none")
         except Exception as e:
             out["info"] = f"n/a ({e})"
         return out
