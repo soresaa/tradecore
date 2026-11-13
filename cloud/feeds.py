@@ -57,6 +57,10 @@ class _CandleFeed:
             except Exception:
                 self.m5 = pd.DataFrame(columns=COLS)
 
+    def _clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Hook: drop candles the backtest data would not have (default: keep all)."""
+        return df
+
     # ---- provider-specific
     def _fetch_closed(self, since: pd.Timestamp | None, need: int) -> pd.DataFrame:
         raise NotImplementedError
@@ -86,6 +90,7 @@ class _CandleFeed:
                 raise
             if want > 0:
                 self._tried = max(self._tried, need)
+            new = self._clean(new) if len(new) else new
             if len(new):
                 old_last = self.m5.index[-1] if len(self.m5) else None
                 df = pd.concat([self.m5, new])
@@ -456,6 +461,23 @@ class TwelveDataFeed(_CandleFeed):
         self._next_fetch = 0.0
         self._last_call = 0.0
         self._retries = 0
+        if len(self.m5):
+            self.m5 = self._clean(self.m5)             # an older cache may still hold weekend candles
+
+    def _clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Twelve Data sends gold/forex 5-minute candles over the weekend too (flat, tiny ranges). The backtest
+        data (Dukascopy / Exness) has none: Friday ends about 21:00-22:00 UTC and Sunday starts at 22:00-23:00 UTC.
+        Those weekend candles made Saturday look like a real (very quiet) day: the quiet-day card picked it and the
+        daily / 4h averages were pulled down. Drop them: all of Saturday, Friday from 22:00 and Sunday before 22:00
+        UTC; in the edge hours (Friday 21:xx, Sunday 22:xx) drop candles that did not move at all."""
+        if not len(df):
+            return df
+        i = df.index
+        dw, hr = i.dayofweek, i.hour
+        closed = (dw == 5) | ((dw == 4) & (hr >= 22)) | ((dw == 6) & (hr < 22))
+        edge = ((dw == 4) & (hr == 21)) | ((dw == 6) & (hr == 22))
+        flat = (df["high"] - df["low"]).abs().to_numpy() < 1e-9
+        return df[~(closed | (edge & flat))]
 
     def _call(self, **params) -> pd.DataFrame:
         with TwelveDataFeed._pace_lock:
